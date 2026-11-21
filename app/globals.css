@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-playfair: 'Playfair Display', Georgia, serif;
+  --font-poppins: 'Poppins', system-ui, sans-serif;
+}
+
+body {
+  color: #2A161C;
+  background-color: #FFFFFF;
+  font-family: var(--font-poppins);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Hide scrollbars for clean marquee and swipeable categories */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Printable Invoice Styles */
+@media print {
+  .no-print,
+  header,
+  footer,
+  nav,
+  button,
+  .mobile-bottom-nav {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 12pt !important;
+  }
+
+  #printable-invoice {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 20px !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+}
