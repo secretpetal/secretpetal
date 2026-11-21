@@ -171,7 +171,7 @@ export default function HomePage() {
               <a
                 href="https://wa.me/923266228304"
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs sm:text-sm rounded-xl text-center transition-colors shadow-sm"
               >
                 Chat Discreetly on WhatsApp

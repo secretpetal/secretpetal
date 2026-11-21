@@ -74,7 +74,7 @@ export default function MobileBottomNav() {
         <a
           href="https://wa.me/923266228304"
           target="_blank"
-          rel="noreferrer"
+          rel="noopener noreferrer"
           className="flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-full text-[10px] font-medium text-emerald-700 hover:text-emerald-800 transition-all"
         >
           <Phone className="w-4 h-4 mb-0.5 text-emerald-600" />

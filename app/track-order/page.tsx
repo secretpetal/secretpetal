@@ -171,7 +171,7 @@ export default function TrackOrderPage() {
                 <a
                   href={`https://wa.me/923266228304?text=Hi%20Secret%20Petal,%20inquiring%20about%20order%20${order.order_number}`}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs rounded-xl flex items-center justify-center gap-2 transition-colors shadow-xs"
                 >
                   <Phone className="w-4 h-4" />
@@ -188,7 +188,7 @@ export default function TrackOrderPage() {
                 <a
                   href="https://wa.me/923266228304"
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold"
                 >
                   <Phone className="w-3.5 h-3.5" />

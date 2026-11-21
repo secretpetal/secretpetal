@@ -315,7 +315,7 @@ export default function Header({ onMobileMenuToggle }: HeaderProps) {
               <a
                 href="https://wa.me/923266228304"
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="flex items-center justify-center gap-2 w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs"
               >
                 <Phone className="w-4 h-4" />

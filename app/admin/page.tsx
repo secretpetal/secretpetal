@@ -71,7 +71,7 @@ import {
   DEFAULT_SITE_SETTINGS
 } from '@/lib/db';
 
-const MASTER_ADMIN_PIN = 'secretpetal_SecureLingerie#2026!786';
+const MASTER_ADMIN_PIN = process.env.NEXT_PUBLIC_ADMIN_PIN || 'secretpetal_SecureLingerie#2026!786';
 
 type AdminTab = 'dashboard' | 'products' | 'categories' | 'orders' | 'banners' | 'coupons' | 'settings';
 
@@ -80,6 +80,17 @@ export default function AdminPage() {
   const [passwordInput, setPasswordInput] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutSeconds, setLockoutSeconds] = useState(0);
+
+  // Security Lockout Countdown Timer
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setLockoutSeconds((prev) => (prev > 1 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockoutSeconds]);
 
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -150,7 +161,7 @@ export default function AdminPage() {
         getProducts(),
         getCategories(),
         getSubcategories(),
-        getBanners(),
+        getBanners({ includeInactive: true }),
         getOrders(),
         getSiteSettings(),
         getCoupons(),
@@ -199,15 +210,25 @@ export default function AdminPage() {
     }
   }, [isAuthenticated]);
 
-  // Handle Authentication
+  // Handle Authentication with Rate-Limiting Protection
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
+    if (lockoutSeconds > 0) return;
+
     if (passwordInput.trim() === MASTER_ADMIN_PIN) {
       setIsAuthenticated(true);
       sessionStorage.setItem('sp_admin_auth', 'true');
       setAuthError('');
+      setFailedAttempts(0);
     } else {
-      setAuthError('Invalid Security Key. Please verify and re-enter.');
+      const nextFailed = failedAttempts + 1;
+      setFailedAttempts(nextFailed);
+      if (nextFailed >= 5) {
+        setLockoutSeconds(60);
+        setAuthError('Too many failed attempts. Security cooldown active for 60 seconds.');
+      } else {
+        setAuthError(`Invalid Security Key. (${5 - nextFailed} attempts remaining before cooldown).`);
+      }
     }
   };
 
@@ -335,9 +356,14 @@ export default function AdminPage() {
 
             <button
               type="submit"
-              className="w-full py-3 bg-burgundy hover:bg-burgundy-900 text-white font-bold text-xs sm:text-sm rounded-xl transition-all shadow-md"
+              disabled={lockoutSeconds > 0}
+              className={`w-full py-3 text-white font-bold text-xs sm:text-sm rounded-xl transition-all shadow-md ${
+                lockoutSeconds > 0
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-burgundy hover:bg-burgundy-900 active:scale-[0.99]'
+              }`}
             >
-              Unlock Admin Portal
+              {lockoutSeconds > 0 ? `Locked (${lockoutSeconds}s cooldown)` : 'Unlock Admin Portal'}
             </button>
           </form>
 
@@ -502,6 +528,7 @@ export default function AdminPage() {
             <Link
               href="/"
               target="_blank"
+              rel="noopener noreferrer"
               className="text-[11px] font-semibold text-gray-500 hover:text-burgundy flex items-center gap-1"
             >
               <ExternalLink className="w-3.5 h-3.5" />
@@ -2156,6 +2183,27 @@ export default function AdminPage() {
               </div>
 
               <div>
+                <label className="block font-semibold mb-1">Mobile Banner Image (800x600 Optional)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={async (e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      const url = await uploadMedia(e.target.files[0], 'banners');
+                      setEditingBanner({ ...editingBanner, mobile_image_url: url });
+                      triggerToast('Mobile banner uploaded');
+                    }
+                  }}
+                  className="w-full text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-burgundy file:text-white"
+                />
+                {editingBanner.mobile_image_url && (
+                  <div className="mt-2 relative aspect-[800/600] max-h-32 w-auto rounded-lg overflow-hidden border">
+                    <Image src={editingBanner.mobile_image_url} alt="Mobile" fill className="object-cover" unoptimized />
+                  </div>
+                )}
+              </div>
+
+              <div>
                 <label className="block font-semibold mb-1">Target Click URL</label>
                 <input
                   type="text"
@@ -2163,6 +2211,19 @@ export default function AdminPage() {
                   onChange={(e) => setEditingBanner({ ...editingBanner, link_url: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg font-mono"
                 />
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="banner_is_active"
+                  checked={editingBanner.is_active ?? true}
+                  onChange={(e) => setEditingBanner({ ...editingBanner, is_active: e.target.checked })}
+                  className="rounded text-burgundy w-4 h-4"
+                />
+                <label htmlFor="banner_is_active" className="font-semibold text-gray-700 cursor-pointer">
+                  Display this banner on homepage (Active)
+                </label>
               </div>
 
               <div className="pt-4 border-t flex justify-end gap-2">

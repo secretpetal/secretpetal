@@ -98,7 +98,7 @@ export default function Footer() {
                 <a
                   href="https://www.facebook.com/secretpetal.pk"
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="px-2 py-1 bg-white border border-rose-200 rounded text-gray-700 hover:text-burgundy transition-colors"
                 >
                   Facebook
@@ -106,15 +106,15 @@ export default function Footer() {
                 <a
                   href="https://www.instagram.com/secretpetal.store"
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="px-2 py-1 bg-white border border-rose-200 rounded text-gray-700 hover:text-burgundy transition-colors"
                 >
                   Instagram
                 </a>
                 <a
-                  href="http://tiktok.com/@secretpetal.store"
+                  href="https://www.tiktok.com/@secretpetal.store"
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="px-2 py-1 bg-white border border-rose-200 rounded text-gray-700 hover:text-burgundy transition-colors"
                 >
                   TikTok

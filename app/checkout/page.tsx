@@ -223,7 +223,7 @@ export default function CheckoutPage() {
             <a
               href={`https://wa.me/923266228304?text=Hello%20Secret%20Petal,%20I%20just%20placed%20order%20${submittedOrder.order_number}`}
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs sm:text-sm rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
             >
               <Phone className="w-4 h-4" />

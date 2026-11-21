@@ -728,16 +728,21 @@ export async function deleteSubcategory(id: string): Promise<boolean> {
 // ==========================================
 // 5. BANNERS CRUD
 // ==========================================
-export async function getBanners(): Promise<Banner[]> {
+export async function getBanners(options?: { includeInactive?: boolean }): Promise<Banner[]> {
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('banners')
       .select(BANNER_FIELDS)
-      .eq('is_active', true)
       .order('display_order', { ascending: true });
 
+    if (!options?.includeInactive) {
+      query = query.eq('is_active', true);
+    }
+
+    const { data, error } = await query;
+
     if (!error && data && data.length > 0) {
-      if (typeof window !== 'undefined') {
+      if (typeof window !== 'undefined' && !options?.includeInactive) {
         localStorage.setItem('sp_cached_banners', JSON.stringify(data));
       }
       return data as Banner[];
@@ -749,12 +754,16 @@ export async function getBanners(): Promise<Banner[]> {
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          if (options?.includeInactive) return parsed;
+          return parsed.filter(b => b.is_active);
+        }
       } catch (_) {}
     }
   }
 
-  return DEFAULT_BANNERS;
+  if (options?.includeInactive) return DEFAULT_BANNERS;
+  return DEFAULT_BANNERS.filter(b => b.is_active);
 }
 
 export async function saveBanner(banner: Partial<Banner>): Promise<Banner> {
