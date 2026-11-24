@@ -13,13 +13,14 @@ const ITEMS_PER_PAGE = 8;
 function ShopContent() {
   const searchParams = useSearchParams();
   const initialCategorySlug = searchParams.get('cat') || '';
+  const initialSubcategorySlug = searchParams.get('sub') || '';
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
 
   const [selectedCategory, setSelectedCategory] = useState<string>(initialCategorySlug);
-  const [selectedSubcategory, setSelectedSubcategory] = useState<string>('');
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string>(initialSubcategorySlug);
   const [sortBy, setSortBy] = useState<string>('newest');
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
@@ -35,13 +36,17 @@ function ShopContent() {
     loadMeta();
   }, []);
 
-  // Update selectedCategory if URL param changes
+  // Update selectedCategory / selectedSubcategory if URL params change
   useEffect(() => {
     if (initialCategorySlug) {
       setSelectedCategory(initialCategorySlug);
       setCurrentPage(1);
     }
-  }, [initialCategorySlug]);
+    if (initialSubcategorySlug) {
+      setSelectedSubcategory(initialSubcategorySlug);
+      setCurrentPage(1);
+    }
+  }, [initialCategorySlug, initialSubcategorySlug]);
 
   // Load Products
   useEffect(() => {

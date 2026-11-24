@@ -388,7 +388,7 @@ export const DEFAULT_COUPONS: Coupon[] = [
 
 // Projection Fields
 const PRODUCT_FIELDS = 'id, title, slug, sku, category_id, subcategory_id, price, sale_price, stock, thumbnail_url, gallery_urls, sizes, colors, description, features, is_featured, is_flash_deal, is_active, created_at, updated_at';
-const CATEGORY_FIELDS = 'id, name, slug, image_url, show_in_top_categories, display_order, created_at';
+const CATEGORY_FIELDS = 'id, name, slug, image_url, show_in_top_categories, show_in_header, display_order, created_at';
 const SUBCATEGORY_FIELDS = 'id, category_id, name, slug, display_order, created_at';
 const BANNER_FIELDS = 'id, title, image_url, mobile_image_url, link_url, display_order, is_active, created_at';
 const ORDER_FIELDS = 'id, order_number, customer_name, phone, whatsapp, province, city, delivery_address, order_notes, items, subtotal, delivery_charges, discount_amount, grand_total, payment_method, payment_status, payment_screenshot_url, order_status, created_at';
@@ -622,6 +622,7 @@ export async function saveCategory(category: Partial<Category>): Promise<Categor
     slug,
     image_url: category.image_url || '/images/products/c355ef86a15549c03989a4d67a7b406a.jpg.webp',
     show_in_top_categories: category.show_in_top_categories ?? true,
+    show_in_header: category.show_in_header ?? true,
     display_order: category.display_order || list.length + 1,
     created_at: category.created_at || new Date().toISOString()
   };
@@ -772,7 +773,7 @@ export async function getBanners(options?: { includeInactive?: boolean }): Promi
 }
 
 export async function saveBanner(banner: Partial<Banner>): Promise<Banner> {
-  const list = await getBanners();
+  const list = await getBanners({ includeInactive: true });
   const id = banner.id || `BAN-${Date.now()}`;
 
   const item: Banner = {
@@ -781,7 +782,7 @@ export async function saveBanner(banner: Partial<Banner>): Promise<Banner> {
     image_url: banner.image_url || '/images/banners/banner_butterfly_posture_desktop.webp',
     mobile_image_url: banner.mobile_image_url || banner.image_url || '/images/banners/banner_butterfly_posture_mobile.webp',
     link_url: banner.link_url || '/shop',
-    display_order: banner.display_order || list.length + 1,
+    display_order: banner.display_order || (banner.id ? list.find(b => b.id === banner.id)?.display_order || 1 : list.length + 1),
     is_active: banner.is_active ?? true,
     created_at: banner.created_at || new Date().toISOString()
   };
@@ -802,7 +803,7 @@ export async function saveBanner(banner: Partial<Banner>): Promise<Banner> {
 }
 
 export async function deleteBanner(id: string): Promise<boolean> {
-  const list = await getBanners();
+  const list = await getBanners({ includeInactive: true });
   const updated = list.filter(b => b.id !== id);
 
   if (typeof window !== 'undefined') {
@@ -895,6 +896,37 @@ export async function createOrder(order: Omit<Order, 'id' | 'order_number' | 'cr
   } catch (err) {}
 
   return { data: fullOrder, error: null };
+}
+
+export async function updateOrder(order: Partial<Order> & { id: string }): Promise<{ data: Order; error: any }> {
+  const orders = await getOrders();
+  const existing = orders.find(o => o.id === order.id || o.order_number === order.id);
+  const updatedOrder: Order = {
+    ...(existing || {} as Order),
+    ...order
+  };
+
+  // 1. Optimistic Local Persistence
+  const updatedList = orders.map(o => (o.id === order.id || o.order_number === order.id) ? updatedOrder : o);
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('sp_cached_orders', JSON.stringify(updatedList));
+  }
+  notifyUpdate('sp_orders_updated');
+
+  // 2. Supabase Sync
+  try {
+    const { data, error } = await supabase
+      .from('orders')
+      .upsert(updatedOrder)
+      .select(ORDER_FIELDS)
+      .single();
+
+    if (!error && data) {
+      return { data: data as Order, error: null };
+    }
+  } catch (err) {}
+
+  return { data: updatedOrder, error: null };
 }
 
 export async function updateOrderStatus(id: string, status: Order['order_status'], paymentStatus?: Order['payment_status']): Promise<boolean> {

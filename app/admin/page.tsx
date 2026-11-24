@@ -62,6 +62,7 @@ import {
   deleteBanner,
   getOrders,
   updateOrderStatus,
+  updateOrder,
   deleteOrder,
   getCoupons,
   saveCoupon,
@@ -135,9 +136,17 @@ export default function AdminPage() {
 
   const [isBannerModalOpen, setIsBannerModalOpen] = useState(false);
   const [editingBanner, setEditingBanner] = useState<Partial<Banner> | null>(null);
+  const [isSavingBanner, setIsSavingBanner] = useState(false);
 
   const [isCouponModalOpen, setIsCouponModalOpen] = useState(false);
   const [editingCoupon, setEditingCoupon] = useState<Partial<Coupon> | null>(null);
+  const [isSavingCoupon, setIsSavingCoupon] = useState(false);
+
+  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<Partial<Order> | null>(null);
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
+
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   const [selectedProofUrl, setSelectedProofUrl] = useState<string | null>(null);
   const [printInvoiceOrder, setPrintInvoiceOrder] = useState<Order | null>(null);
@@ -948,7 +957,7 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setEditingCategory({ name: '', slug: '', image_url: '', show_in_top_categories: true });
+                    setEditingCategory({ name: '', slug: '', image_url: '', show_in_top_categories: true, show_in_header: true });
                     setIsCategoryModalOpen(true);
                   }}
                   className="px-3.5 py-1.5 bg-burgundy hover:bg-burgundy-900 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-xs"
@@ -1188,6 +1197,18 @@ export default function AdminPage() {
                           <td className="p-3 text-right whitespace-nowrap space-x-1.5">
                             <button
                               type="button"
+                              onClick={() => {
+                                setEditingOrder({ ...ord });
+                                setIsOrderModalOpen(true);
+                              }}
+                              className="p-1.5 text-gray-600 hover:text-burgundy bg-gray-50 hover:bg-blush-50 rounded-lg transition-colors inline-flex items-center gap-1 text-[11px] font-medium"
+                              title="Edit Order"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Edit</span>
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => setPrintInvoiceOrder(ord)}
                               className="p-1.5 text-gray-600 hover:text-burgundy bg-gray-50 hover:bg-blush-50 rounded-lg transition-colors inline-flex items-center gap-1 text-[11px] font-medium"
                               title="Print Invoice"
@@ -1338,9 +1359,17 @@ export default function AdminPage() {
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
-                await saveSiteSettings(settings);
-                await loadAllData();
-                triggerToast('Store & payment settings saved successfully!');
+                if (isSavingSettings) return;
+                setIsSavingSettings(true);
+                try {
+                  await saveSiteSettings(settings);
+                  await loadAllData();
+                  triggerToast('Store & payment settings saved successfully to database!');
+                } catch (err: any) {
+                  triggerToast('Failed to save settings');
+                } finally {
+                  setIsSavingSettings(false);
+                }
               }}
               className="bg-white rounded-2xl p-6 border border-rose-100 shadow-xs space-y-6"
             >
@@ -1505,9 +1534,17 @@ export default function AdminPage() {
               <div className="pt-4 border-t border-rose-100 flex justify-end">
                 <button
                   type="submit"
-                  className="px-6 py-2.5 bg-burgundy hover:bg-burgundy-900 text-white font-bold text-xs rounded-xl shadow-xs"
+                  disabled={isSavingSettings}
+                  className="px-6 py-2.5 bg-burgundy hover:bg-burgundy-900 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 disabled:opacity-50"
                 >
-                  Save Store &amp; Payment Settings
+                  {isSavingSettings ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Saving to Database...</span>
+                    </>
+                  ) : (
+                    <span>Save Store &amp; Payment Settings</span>
+                  )}
                 </button>
               </div>
             </form>
@@ -1775,6 +1812,12 @@ export default function AdminPage() {
                     <span>Delivery Charges:</span>
                     <span>Rs. {printInvoiceOrder.delivery_charges}</span>
                   </div>
+                  {(printInvoiceOrder.discount_amount ?? 0) > 0 && (
+                    <div className="flex justify-between text-emerald-700 font-medium">
+                      <span>Discount:</span>
+                      <span>-Rs. {printInvoiceOrder.discount_amount?.toLocaleString()}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-sm font-bold text-black pt-1 border-t border-gray-300">
                     <span>Grand Total:</span>
                     <span>Rs. {printInvoiceOrder.grand_total.toLocaleString()}</span>
@@ -2334,15 +2377,27 @@ export default function AdminPage() {
                 )}
               </div>
 
-              <label className="flex items-center gap-2 cursor-pointer pt-2">
-                <input
-                  type="checkbox"
-                  checked={editingCategory.show_in_top_categories ?? true}
-                  onChange={(e) => setEditingCategory({ ...editingCategory, show_in_top_categories: e.target.checked })}
-                  className="accent-burgundy"
-                />
-                <span>Show in Homepage Top Categories</span>
-              </label>
+              <div className="space-y-2 pt-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editingCategory.show_in_top_categories ?? true}
+                    onChange={(e) => setEditingCategory({ ...editingCategory, show_in_top_categories: e.target.checked })}
+                    className="accent-burgundy rounded w-4 h-4"
+                  />
+                  <span className="font-medium text-gray-700">Show in Homepage Top Categories</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editingCategory.show_in_header ?? true}
+                    onChange={(e) => setEditingCategory({ ...editingCategory, show_in_header: e.target.checked })}
+                    className="accent-burgundy rounded w-4 h-4"
+                  />
+                  <span className="font-medium text-gray-700">Show in Header Navigation</span>
+                </label>
+              </div>
 
               <div className="pt-4 border-t flex justify-end gap-2">
                 <button type="button" onClick={() => setIsCategoryModalOpen(false)} className="px-3 py-1.5 border rounded-lg">Cancel</button>
@@ -2420,10 +2475,18 @@ export default function AdminPage() {
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
-                await saveBanner(editingBanner);
-                await loadAllData();
-                setIsBannerModalOpen(false);
-                triggerToast('Banner updated');
+                if (isSavingBanner) return;
+                setIsSavingBanner(true);
+                try {
+                  await saveBanner(editingBanner);
+                  await loadAllData();
+                  setIsBannerModalOpen(false);
+                  triggerToast('Banner updated successfully in database');
+                } catch (err: any) {
+                  triggerToast('Failed to save banner');
+                } finally {
+                  setIsSavingBanner(false);
+                }
               }}
               className="space-y-3 text-xs"
             >
@@ -2504,7 +2567,20 @@ export default function AdminPage() {
 
               <div className="pt-4 border-t flex justify-end gap-2">
                 <button type="button" onClick={() => setIsBannerModalOpen(false)} className="px-3 py-1.5 border rounded-lg">Cancel</button>
-                <button type="submit" className="px-4 py-1.5 bg-burgundy text-white font-bold rounded-lg">Save Banner</button>
+                <button
+                  type="submit"
+                  disabled={isSavingBanner}
+                  className="px-4 py-1.5 bg-burgundy text-white font-bold rounded-lg flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {isSavingBanner ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>Save Banner</span>
+                  )}
+                </button>
               </div>
             </form>
           </div>
@@ -2521,10 +2597,18 @@ export default function AdminPage() {
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
-                await saveCoupon(editingCoupon);
-                await loadAllData();
-                setIsCouponModalOpen(false);
-                triggerToast('Coupon saved successfully');
+                if (isSavingCoupon) return;
+                setIsSavingCoupon(true);
+                try {
+                  await saveCoupon(editingCoupon);
+                  await loadAllData();
+                  setIsCouponModalOpen(false);
+                  triggerToast('Coupon saved successfully to database');
+                } catch (err: any) {
+                  triggerToast('Failed to save coupon');
+                } finally {
+                  setIsSavingCoupon(false);
+                }
               }}
               className="space-y-3 text-xs"
             >
@@ -2602,7 +2686,302 @@ export default function AdminPage() {
 
               <div className="pt-4 border-t flex justify-end gap-2">
                 <button type="button" onClick={() => setIsCouponModalOpen(false)} className="px-3 py-1.5 border rounded-lg">Cancel</button>
-                <button type="submit" className="px-4 py-1.5 bg-burgundy text-white font-bold rounded-lg">Save Coupon</button>
+                <button
+                  type="submit"
+                  disabled={isSavingCoupon}
+                  className="px-4 py-1.5 bg-burgundy text-white font-bold rounded-lg flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {isSavingCoupon ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>Save Coupon</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Edit Customer Order */}
+      {isOrderModalOpen && editingOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 my-8 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-rose-100">
+              <div>
+                <h3 className="font-serif font-bold text-base text-gray-900">
+                  Edit Order #{editingOrder.order_number}
+                </h3>
+                <p className="text-[11px] text-gray-500">
+                  Update customer delivery details, amounts, status, or notes in database.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsOrderModalOpen(false)}
+                className="p-1 text-gray-400 hover:text-gray-700 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (isSavingOrder || !editingOrder.id) return;
+                setIsSavingOrder(true);
+                try {
+                  const subtotal = Number(editingOrder.subtotal) || 0;
+                  const delivery = Number(editingOrder.delivery_charges) || 0;
+                  const discount = Number(editingOrder.discount_amount) || 0;
+                  const grandTotal = Math.max(0, subtotal - discount + delivery);
+
+                  await updateOrder({
+                    ...editingOrder,
+                    id: editingOrder.id,
+                    subtotal,
+                    delivery_charges: delivery,
+                    discount_amount: discount,
+                    grand_total: grandTotal
+                  });
+                  await loadAllData();
+                  setIsOrderModalOpen(false);
+                  triggerToast(`Order ${editingOrder.order_number} updated successfully in database!`);
+                } catch (err: any) {
+                  triggerToast('Failed to update order');
+                } finally {
+                  setIsSavingOrder(false);
+                }
+              }}
+              className="space-y-4 text-xs overflow-y-auto flex-1 pr-1"
+            >
+              {/* Customer Contact */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1 text-gray-700">Customer Full Name *</label>
+                  <input
+                    type="text"
+                    value={editingOrder.customer_name || ''}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, customer_name: e.target.value })}
+                    required
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-burgundy"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1 text-gray-700">Phone Number *</label>
+                  <input
+                    type="text"
+                    value={editingOrder.phone || ''}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, phone: e.target.value })}
+                    required
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-burgundy"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1 text-gray-700">WhatsApp (Optional)</label>
+                  <input
+                    type="text"
+                    value={editingOrder.whatsapp || ''}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, whatsapp: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-burgundy"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1 text-gray-700">City *</label>
+                  <input
+                    type="text"
+                    value={editingOrder.city || ''}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, city: e.target.value })}
+                    required
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-burgundy"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1 text-gray-700">Delivery Address *</label>
+                <textarea
+                  rows={2}
+                  value={editingOrder.delivery_address || ''}
+                  onChange={(e) => setEditingOrder({ ...editingOrder, delivery_address: e.target.value })}
+                  required
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-burgundy"
+                />
+              </div>
+
+              {/* Status and Payment */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1 text-gray-700">Order Status</label>
+                  <select
+                    value={editingOrder.order_status || 'Pending'}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, order_status: e.target.value as Order['order_status'] })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg font-semibold bg-white"
+                  >
+                    <option value="Pending">Pending</option>
+                    <option value="Confirmed">Confirmed</option>
+                    <option value="Processing">Processing</option>
+                    <option value="Shipped">Shipped</option>
+                    <option value="Delivered">Delivered</option>
+                    <option value="Cancelled">Cancelled</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1 text-gray-700">Payment Method</label>
+                  <select
+                    value={editingOrder.payment_method || 'cod'}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, payment_method: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg uppercase font-semibold bg-white"
+                  >
+                    <option value="cod">Cash on Delivery (COD)</option>
+                    <option value="jazzcash">JazzCash</option>
+                    <option value="easypaisa">EasyPaisa</option>
+                    <option value="bank">Bank Transfer</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1 text-gray-700">Payment Status</label>
+                  <select
+                    value={editingOrder.payment_status || 'pending'}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, payment_status: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg capitalize font-semibold bg-white"
+                  >
+                    <option value="pending">Pending</option>
+                    <option value="verified">Verified</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Pricing breakdown */}
+              <div className="p-3 bg-blush-50/60 rounded-xl border border-rose-100 grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-600 mb-1">Subtotal (PKR)</label>
+                  <input
+                    type="number"
+                    value={editingOrder.subtotal ?? 0}
+                    onChange={(e) => {
+                      const sub = parseFloat(e.target.value) || 0;
+                      const del = editingOrder.delivery_charges ?? 200;
+                      const disc = editingOrder.discount_amount ?? 0;
+                      setEditingOrder({ ...editingOrder, subtotal: sub, grand_total: Math.max(0, sub - disc + del) });
+                    }}
+                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-600 mb-1">Delivery Charges</label>
+                  <input
+                    type="number"
+                    value={editingOrder.delivery_charges ?? 200}
+                    onChange={(e) => {
+                      const del = parseFloat(e.target.value) || 0;
+                      const sub = editingOrder.subtotal ?? 0;
+                      const disc = editingOrder.discount_amount ?? 0;
+                      setEditingOrder({ ...editingOrder, delivery_charges: del, grand_total: Math.max(0, sub - disc + del) });
+                    }}
+                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-600 mb-1">Discount (PKR)</label>
+                  <input
+                    type="number"
+                    value={editingOrder.discount_amount ?? 0}
+                    onChange={(e) => {
+                      const disc = parseFloat(e.target.value) || 0;
+                      const sub = editingOrder.subtotal ?? 0;
+                      const del = editingOrder.delivery_charges ?? 200;
+                      setEditingOrder({ ...editingOrder, discount_amount: disc, grand_total: Math.max(0, sub - disc + del) });
+                    }}
+                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-600 mb-1">Grand Total (PKR)</label>
+                  <input
+                    type="number"
+                    value={editingOrder.grand_total ?? 0}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, grand_total: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-2.5 py-1.5 border border-burgundy/40 rounded-lg bg-white font-bold text-burgundy"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1 text-gray-700">Order Notes / Instructions</label>
+                <textarea
+                  rows={2}
+                  value={editingOrder.order_notes || ''}
+                  onChange={(e) => setEditingOrder({ ...editingOrder, order_notes: e.target.value })}
+                  placeholder="Special instructions, gate codes, delivery time..."
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-burgundy"
+                />
+              </div>
+
+              {/* Order Items Preview */}
+              {editingOrder.items && editingOrder.items.length > 0 && (
+                <div className="pt-2 border-t border-rose-100">
+                  <h4 className="font-semibold text-gray-700 mb-2">Ordered Items ({editingOrder.items.length})</h4>
+                  <div className="divide-y divide-rose-50 max-h-36 overflow-y-auto border border-rose-100 rounded-lg p-2 bg-gray-50/50">
+                    {editingOrder.items.map((item, idx) => (
+                      <div key={idx} className="py-1.5 flex items-center justify-between text-xs">
+                        <div>
+                          <p className="font-semibold text-gray-800">{item.title}</p>
+                          <p className="text-[10px] text-gray-500">
+                            {item.size && <span>Size: {item.size} • </span>}
+                            {item.color && <span>Color: {item.color} • </span>}
+                            Qty: {item.quantity}
+                          </p>
+                        </div>
+                        <span className="font-bold text-burgundy">
+                          Rs. {(item.price * item.quantity).toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-4 border-t border-rose-100 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOrderModalOpen(false);
+                    setPrintInvoiceOrder(editingOrder as Order);
+                  }}
+                  className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-semibold flex items-center gap-1.5 transition-colors"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Preview Invoice</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsOrderModalOpen(false)}
+                    className="px-4 py-2 border border-gray-200 rounded-xl font-semibold text-gray-600 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingOrder}
+                    className="px-5 py-2 bg-burgundy hover:bg-burgundy-900 text-white font-bold rounded-xl flex items-center gap-2 shadow-xs disabled:opacity-50"
+                  >
+                    {isSavingOrder ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <span>Save Order Changes</span>
+                    )}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

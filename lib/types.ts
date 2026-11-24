@@ -4,6 +4,7 @@ export interface Category {
   slug: string;
   image_url: string;
   show_in_top_categories?: boolean;
+  show_in_header?: boolean;
   display_order?: number;
   created_at?: string;
 }

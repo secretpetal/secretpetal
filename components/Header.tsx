@@ -15,11 +15,12 @@ import {
   Truck,
   Sparkles,
   ChevronRight,
+  ChevronDown,
   Lock
 } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
-import { Product } from '@/lib/types';
-import { getProducts } from '@/lib/db';
+import { Product, Category, Subcategory } from '@/lib/types';
+import { getProducts, getCategories, getSubcategories } from '@/lib/db';
 import BraSizeCalculatorModal from './BraSizeCalculatorModal';
 
 interface HeaderProps {
@@ -36,12 +37,28 @@ export default function Header({ onMobileMenuToggle }: HeaderProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
+  const [hoveredCatId, setHoveredCatId] = useState<string | null>(null);
+  const [mobileExpandedCat, setMobileExpandedCat] = useState<string | null>(null);
 
   const searchRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     getProducts().then(setAllProducts);
+    const loadCategories = () => {
+      getCategories().then(setCategories);
+      getSubcategories().then(setSubcategories);
+    };
+    loadCategories();
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('sp_categories_updated', loadCategories);
+      return () => window.removeEventListener('sp_categories_updated', loadCategories);
+    }
   }, []);
+
+  const headerCategories = categories.filter((c) => c.show_in_header !== false);
 
   // Update mobile menu state to hide bottom nav
   const setMobileMenu = (open: boolean) => {
@@ -151,18 +168,87 @@ export default function Header({ onMobileMenuToggle }: HeaderProps) {
             </Link>
 
             {/* Desktop Navigation Links */}
-            <nav className="hidden lg:flex items-center gap-6 xl:gap-8 text-xs sm:text-sm font-medium text-gray-700">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={`transition-colors hover:text-burgundy py-1 relative ${
-                    pathname === link.href ? 'text-burgundy font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-burgundy' : ''
-                  }`}
-                >
-                  {link.label}
-                </Link>
-              ))}
+            <nav className="hidden lg:flex items-center gap-5 xl:gap-7 text-xs sm:text-sm font-medium text-gray-700">
+              <Link
+                href="/"
+                className={`transition-colors hover:text-burgundy py-1 relative ${
+                  pathname === '/' ? 'text-burgundy font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-burgundy' : ''
+                }`}
+              >
+                Home
+              </Link>
+              <Link
+                href="/shop"
+                className={`transition-colors hover:text-burgundy py-1 relative ${
+                  pathname === '/shop' ? 'text-burgundy font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-burgundy' : ''
+                }`}
+              >
+                All Products
+              </Link>
+
+              {/* Dynamic Header Categories with Subcategory Dropdowns */}
+              {headerCategories.map((cat) => {
+                const catSubs = subcategories.filter((s) => s.category_id === cat.id);
+                const isHovered = hoveredCatId === cat.id;
+
+                return (
+                  <div
+                    key={cat.id}
+                    className="relative"
+                    onMouseEnter={() => setHoveredCatId(cat.id)}
+                    onMouseLeave={() => setHoveredCatId(null)}
+                  >
+                    <Link
+                      href={`/shop?cat=${cat.slug}`}
+                      className="flex items-center gap-1 transition-colors hover:text-burgundy py-1"
+                    >
+                      <span>{cat.name}</span>
+                      {catSubs.length > 0 && (
+                        <ChevronDown className="w-3 h-3 text-gray-400" />
+                      )}
+                    </Link>
+
+                    {/* Subcategories Dropdown */}
+                    {catSubs.length > 0 && isHovered && (
+                      <div className="absolute top-full left-0 mt-1 w-52 bg-white rounded-xl shadow-xl border border-rose-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                        <Link
+                          href={`/shop?cat=${cat.slug}`}
+                          className="block px-3 py-1.5 text-xs font-bold text-burgundy hover:bg-blush-50"
+                        >
+                          All {cat.name}
+                        </Link>
+                        <div className="my-1 border-t border-rose-50" />
+                        {catSubs.map((sub) => (
+                          <Link
+                            key={sub.id}
+                            href={`/shop?cat=${cat.slug}&sub=${sub.slug}`}
+                            className="block px-3 py-1.5 text-xs text-gray-700 hover:text-burgundy hover:bg-blush-50 transition-colors"
+                          >
+                            {sub.name}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              <Link
+                href="/flash-deals"
+                className={`transition-colors hover:text-burgundy py-1 relative ${
+                  pathname === '/flash-deals' ? 'text-burgundy font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-burgundy' : ''
+                }`}
+              >
+                Flash Deals
+              </Link>
+              <Link
+                href="/track-order"
+                className={`transition-colors hover:text-burgundy py-1 relative ${
+                  pathname === '/track-order' ? 'text-burgundy font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-burgundy' : ''
+                }`}
+              >
+                Track Order
+              </Link>
             </nav>
 
             {/* Right Action Icons & Search */}
@@ -280,18 +366,94 @@ export default function Header({ onMobileMenuToggle }: HeaderProps) {
               </div>
 
               {/* Navigation Links */}
-              <div className="mt-4 space-y-1">
-                {navLinks.map((link) => (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    onClick={() => setMobileMenu(false)}
-                    className="flex items-center justify-between py-2.5 px-3 rounded-lg text-sm font-medium text-gray-800 hover:bg-blush-50 hover:text-burgundy transition-colors"
-                  >
-                    <span>{link.label}</span>
-                    <ChevronRight className="w-4 h-4 text-gray-300" />
-                  </Link>
-                ))}
+              <div className="mt-4 space-y-1 overflow-y-auto max-h-[calc(100vh-230px)] pr-1">
+                <Link
+                  href="/"
+                  onClick={() => setMobileMenu(false)}
+                  className="flex items-center justify-between py-2.5 px-3 rounded-lg text-sm font-medium text-gray-800 hover:bg-blush-50 hover:text-burgundy transition-colors"
+                >
+                  <span>Home</span>
+                  <ChevronRight className="w-4 h-4 text-gray-300" />
+                </Link>
+
+                <Link
+                  href="/shop"
+                  onClick={() => setMobileMenu(false)}
+                  className="flex items-center justify-between py-2.5 px-3 rounded-lg text-sm font-medium text-gray-800 hover:bg-blush-50 hover:text-burgundy transition-colors"
+                >
+                  <span>All Products</span>
+                  <ChevronRight className="w-4 h-4 text-gray-300" />
+                </Link>
+
+                {/* Categories with Subcategories Accordion */}
+                {headerCategories.map((cat) => {
+                  const catSubs = subcategories.filter((s) => s.category_id === cat.id);
+                  const isExpanded = mobileExpandedCat === cat.id;
+
+                  return (
+                    <div key={cat.id} className="rounded-lg overflow-hidden">
+                      <div className="flex items-center justify-between py-2 px-3 rounded-lg text-sm font-medium text-gray-800 hover:bg-blush-50 hover:text-burgundy transition-colors">
+                        <Link
+                          href={`/shop?cat=${cat.slug}`}
+                          onClick={() => setMobileMenu(false)}
+                          className="flex-1"
+                        >
+                          {cat.name}
+                        </Link>
+                        {catSubs.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setMobileExpandedCat(isExpanded ? null : cat.id)}
+                            className="p-1 text-gray-400 hover:text-burgundy"
+                          >
+                            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-burgundy' : ''}`} />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Subcategories list */}
+                      {catSubs.length > 0 && isExpanded && (
+                        <div className="pl-4 pr-2 py-1 space-y-1 bg-blush-50/50 rounded-lg ml-2 border-l-2 border-rose-200">
+                          <Link
+                            href={`/shop?cat=${cat.slug}`}
+                            onClick={() => setMobileMenu(false)}
+                            className="block py-1 px-2 text-xs font-bold text-burgundy"
+                          >
+                            All {cat.name}
+                          </Link>
+                          {catSubs.map((sub) => (
+                            <Link
+                              key={sub.id}
+                              href={`/shop?cat=${cat.slug}&sub=${sub.slug}`}
+                              onClick={() => setMobileMenu(false)}
+                              className="block py-1 px-2 text-xs text-gray-600 hover:text-burgundy"
+                            >
+                              {sub.name}
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                <Link
+                  href="/flash-deals"
+                  onClick={() => setMobileMenu(false)}
+                  className="flex items-center justify-between py-2.5 px-3 rounded-lg text-sm font-medium text-gray-800 hover:bg-blush-50 hover:text-burgundy transition-colors"
+                >
+                  <span>Flash Deals</span>
+                  <ChevronRight className="w-4 h-4 text-gray-300" />
+                </Link>
+
+                <Link
+                  href="/track-order"
+                  onClick={() => setMobileMenu(false)}
+                  className="flex items-center justify-between py-2.5 px-3 rounded-lg text-sm font-medium text-gray-800 hover:bg-blush-50 hover:text-burgundy transition-colors"
+                >
+                  <span>Track Order</span>
+                  <ChevronRight className="w-4 h-4 text-gray-300" />
+                </Link>
 
                 <button
                   type="button"
