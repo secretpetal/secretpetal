@@ -19,8 +19,8 @@ import {
   Lock
 } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
-import { Product, Category, Subcategory } from '@/lib/types';
-import { getProducts, getCategories, getSubcategories } from '@/lib/db';
+import { Product, Category, Subcategory, SiteSettings } from '@/lib/types';
+import { getProducts, getCategories, getSubcategories, getSiteSettings } from '@/lib/db';
 import BraSizeCalculatorModal from './BraSizeCalculatorModal';
 
 interface HeaderProps {
@@ -39,6 +39,7 @@ export default function Header({ onMobileMenuToggle }: HeaderProps) {
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
+  const [settings, setSettings] = useState<SiteSettings | null>(null);
   const [hoveredCatId, setHoveredCatId] = useState<string | null>(null);
   const [mobileExpandedCat, setMobileExpandedCat] = useState<string | null>(null);
 
@@ -52,9 +53,18 @@ export default function Header({ onMobileMenuToggle }: HeaderProps) {
     };
     loadCategories();
 
+    const loadSettings = () => {
+      getSiteSettings().then(setSettings);
+    };
+    loadSettings();
+
     if (typeof window !== 'undefined') {
       window.addEventListener('sp_categories_updated', loadCategories);
-      return () => window.removeEventListener('sp_categories_updated', loadCategories);
+      window.addEventListener('sp_settings_updated', loadSettings);
+      return () => {
+        window.removeEventListener('sp_categories_updated', loadCategories);
+        window.removeEventListener('sp_settings_updated', loadSettings);
+      };
     }
   }, []);
 
@@ -118,9 +128,7 @@ export default function Header({ onMobileMenuToggle }: HeaderProps) {
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-1.5 mx-auto sm:mx-0">
               <Truck className="w-3.5 h-3.5 text-rose-300" />
-              <span>
-                <strong>FREE Shipping</strong> across Pakistan on orders above Rs. 2,500
-              </span>
+              <span>{settings?.announcement_text || 'FREE Shipping across Pakistan on orders above Rs. 2,500'}</span>
             </div>
             <div className="hidden sm:flex items-center gap-4 text-rose-200 text-[11px]">
               <span className="flex items-center gap-1">

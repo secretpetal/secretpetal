@@ -124,6 +124,7 @@ export interface SiteSettings {
   id?: string;
   store_name: string;
   tagline: string;
+  announcement_text?: string;
   helpline_phone: string;
   whatsapp_number: string;
   email: string;

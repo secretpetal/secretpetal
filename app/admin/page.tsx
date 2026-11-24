@@ -181,7 +181,7 @@ export default function AdminPage() {
     if (!silent) setIsSyncing(true);
     try {
       const [prods, cats, subs, bans, ords, sttngs, cpns] = await Promise.all([
-        getProducts(),
+        getProducts({ includeInactive: true }),
         getCategories(),
         getSubcategories(),
         getBanners({ includeInactive: true }),
@@ -410,7 +410,7 @@ export default function AdminPage() {
       const validColors = productHasColors ? productColorsList.filter(c => c.name.trim().length > 0) : [];
       const parsedFeatures = productFeaturesRaw.split('\n').map(l => l.trim()).filter(Boolean);
 
-      await saveProduct({
+      const res = await saveProduct({
         ...editingProduct,
         has_sizes: productHasSizes,
         sizes: validSizes,
@@ -420,11 +420,16 @@ export default function AdminPage() {
         description: productDescriptionRaw
       });
 
+      if (res.error) {
+        triggerToast('Failed to save to database: ' + (res.error.message || 'Check database connection'));
+        return;
+      }
+
       await loadAllData();
       setIsProductModalOpen(false);
-      triggerToast('Product saved successfully');
-    } catch (err) {
-      triggerToast('Error saving product');
+      triggerToast('Product saved successfully to database');
+    } catch (err: any) {
+      triggerToast('Error saving product: ' + (err.message || 'Error'));
     } finally {
       setIsSavingProduct(false);
     }
@@ -985,20 +990,35 @@ export default function AdminPage() {
                         </div>
                       </div>
 
-                      {/* Homepage Top Categories Toggle Switch */}
-                      <label className="flex items-center justify-between p-2 bg-blush-50 rounded-lg text-xs cursor-pointer mb-3">
-                        <span className="text-[11px] font-semibold text-gray-700">Show in Top Categories:</span>
-                        <input
-                          type="checkbox"
-                          checked={cat.show_in_top_categories !== false}
-                          onChange={async (e) => {
-                            await saveCategory({ ...cat, show_in_top_categories: e.target.checked });
-                            await loadAllData();
-                            triggerToast(`Updated top categories display for ${cat.name}`);
-                          }}
-                          className="accent-burgundy w-4 h-4"
-                        />
-                      </label>
+                      {/* Homepage & Header Categories Toggle Switches */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                        <label className="flex items-center justify-between p-2 bg-blush-50 rounded-lg text-xs cursor-pointer">
+                          <span className="text-[11px] font-semibold text-gray-700">Top Categories:</span>
+                          <input
+                            type="checkbox"
+                            checked={cat.show_in_top_categories !== false}
+                            onChange={async (e) => {
+                              await saveCategory({ ...cat, show_in_top_categories: e.target.checked });
+                              await loadAllData();
+                              triggerToast(`Updated top categories display for ${cat.name}`);
+                            }}
+                            className="accent-burgundy w-4 h-4"
+                          />
+                        </label>
+                        <label className="flex items-center justify-between p-2 bg-rose-50/70 rounded-lg text-xs cursor-pointer">
+                          <span className="text-[11px] font-semibold text-gray-700">Show in Header:</span>
+                          <input
+                            type="checkbox"
+                            checked={cat.show_in_header !== false}
+                            onChange={async (e) => {
+                              await saveCategory({ ...cat, show_in_header: e.target.checked });
+                              await loadAllData();
+                              triggerToast(`Updated header display for ${cat.name}`);
+                            }}
+                            className="accent-burgundy w-4 h-4"
+                          />
+                        </label>
+                      </div>
 
                       {/* Subcategories Tags List */}
                       <div>
@@ -1362,11 +1382,15 @@ export default function AdminPage() {
                 if (isSavingSettings) return;
                 setIsSavingSettings(true);
                 try {
-                  await saveSiteSettings(settings);
+                  const res = await saveSiteSettings(settings);
+                  if (res.error) {
+                    triggerToast('Failed to save to database: ' + (res.error.message || 'Error'));
+                    return;
+                  }
                   await loadAllData();
                   triggerToast('Store & payment settings saved successfully to database!');
                 } catch (err: any) {
-                  triggerToast('Failed to save settings');
+                  triggerToast('Failed to save settings: ' + (err.message || 'Error'));
                 } finally {
                   setIsSavingSettings(false);
                 }
@@ -1422,6 +1446,23 @@ export default function AdminPage() {
                     value={settings.warehouse_address}
                     onChange={(e) => setSettings({ ...settings, warehouse_address: e.target.value })}
                     className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-burgundy"
+                  />
+                </div>
+
+                {/* Top Announcement Bar Header Line */}
+                <div className="mt-4 p-3.5 bg-blush-50/80 rounded-xl border border-rose-200">
+                  <label className="block text-xs font-bold text-gray-800 mb-1">
+                    Top Announcement Bar Line (Header Promo Marquee)
+                  </label>
+                  <p className="text-[11px] text-gray-500 mb-2">
+                    Displayed at the very top of the website header on all desktop &amp; mobile pages.
+                  </p>
+                  <input
+                    type="text"
+                    value={settings.announcement_text ?? 'FREE Shipping across Pakistan on orders above Rs. 2,500'}
+                    onChange={(e) => setSettings({ ...settings, announcement_text: e.target.value })}
+                    placeholder="FREE Shipping across Pakistan on orders above Rs. 2,500"
+                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-burgundy font-medium bg-white"
                   />
                 </div>
               </div>
@@ -2739,7 +2780,7 @@ export default function AdminPage() {
                   const discount = Number(editingOrder.discount_amount) || 0;
                   const grandTotal = Math.max(0, subtotal - discount + delivery);
 
-                  await updateOrder({
+                  const res = await updateOrder({
                     ...editingOrder,
                     id: editingOrder.id,
                     subtotal,
@@ -2747,6 +2788,10 @@ export default function AdminPage() {
                     discount_amount: discount,
                     grand_total: grandTotal
                   });
+                  if (res.error) {
+                    triggerToast('Failed to update in database: ' + (res.error.message || 'Error'));
+                    return;
+                  }
                   await loadAllData();
                   setIsOrderModalOpen(false);
                   triggerToast(`Order ${editingOrder.order_number} updated successfully in database!`);
@@ -3007,9 +3052,14 @@ export default function AdminPage() {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  confirmDialog.onConfirm();
-                  setConfirmDialog({ ...confirmDialog, isOpen: false });
+                onClick={async () => {
+                  try {
+                    await confirmDialog.onConfirm();
+                  } catch (err: any) {
+                    console.error('Confirmation action error:', err);
+                  } finally {
+                    setConfirmDialog({ ...confirmDialog, isOpen: false });
+                  }
                 }}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold"
               >

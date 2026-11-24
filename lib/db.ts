@@ -42,6 +42,7 @@ export function subscribeToStoreChanges(table: string, callback: () => void) {
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   store_name: 'Secret Petal',
   tagline: 'Inner Beauty, Every Day',
+  announcement_text: 'FREE Shipping across Pakistan on orders above Rs. 2,500',
   helpline_phone: '0326-6228304',
   whatsapp_number: '0326-6228304',
   email: 'secretpetal62@gmail.com',
@@ -392,7 +393,7 @@ const CATEGORY_FIELDS = 'id, name, slug, image_url, show_in_top_categories, show
 const SUBCATEGORY_FIELDS = 'id, category_id, name, slug, display_order, created_at';
 const BANNER_FIELDS = 'id, title, image_url, mobile_image_url, link_url, display_order, is_active, created_at';
 const ORDER_FIELDS = 'id, order_number, customer_name, phone, whatsapp, province, city, delivery_address, order_notes, items, subtotal, delivery_charges, discount_amount, grand_total, payment_method, payment_status, payment_screenshot_url, order_status, created_at';
-const SETTINGS_FIELDS = 'id, store_name, tagline, helpline_phone, whatsapp_number, email, warehouse_address, base_shipping_rate, free_shipping_threshold, cod_enabled, jazzcash_title, jazzcash_number, easypaisa_title, easypaisa_number, bank_name, bank_title, bank_iban';
+const SETTINGS_FIELDS = 'id, store_name, tagline, announcement_text, helpline_phone, whatsapp_number, email, warehouse_address, base_shipping_rate, free_shipping_threshold, cod_enabled, jazzcash_title, jazzcash_number, easypaisa_title, easypaisa_number, bank_name, bank_title, bank_iban';
 const COUPON_FIELDS = 'id, code, discount_type, discount_value, min_spend, free_shipping, is_active, created_at';
 
 // ==========================================
@@ -403,6 +404,7 @@ export async function getProducts(options?: {
   subcategoryId?: string;
   isFeatured?: boolean;
   isFlashDeal?: boolean;
+  includeInactive?: boolean;
   limit?: number;
   offset?: number;
   search?: string;
@@ -411,21 +413,26 @@ export async function getProducts(options?: {
 
   // Try fetching fresh products from Supabase
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('products')
       .select(PRODUCT_FIELDS)
-      .eq('is_active', true)
       .order('created_at', { ascending: false });
 
-    if (!error && data && data.length > 0) {
+    if (!options?.includeInactive) {
+      query = query.eq('is_active', true);
+    }
+
+    const { data, error } = await query;
+
+    if (!error && Array.isArray(data)) {
       fullList = data as Product[];
-      if (typeof window !== 'undefined') {
+      if (typeof window !== 'undefined' && !options?.includeInactive) {
         localStorage.setItem('sp_cached_products', JSON.stringify(fullList));
       }
     }
   } catch (e) {}
 
-  // Fallback to local storage or defaults if remote was empty or errored
+  // Fallback to local storage or defaults if remote errored or was empty
   if (fullList.length === 0) {
     if (typeof window !== 'undefined') {
       const cached = localStorage.getItem('sp_cached_products');
@@ -500,7 +507,7 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
 }
 
 export async function saveProduct(product: Partial<Product>): Promise<{ data: Product; error: any }> {
-  const existingList = await getProducts();
+  const existingList = await getProducts({ includeInactive: true });
   const id = product.id || `PROD-${Date.now()}`;
   const title = (product.title || 'Untitled Product').trim();
   const slug = (product.slug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '')).trim();
@@ -508,16 +515,19 @@ export async function saveProduct(product: Partial<Product>): Promise<{ data: Pr
   const hasSizes = product.has_sizes ?? (product.sizes ? product.sizes.length > 0 : true);
   const hasColors = product.has_colors ?? (product.colors ? product.colors.length > 0 : true);
 
+  const categoryId = product.category_id && product.category_id.trim() ? product.category_id.trim() : null;
+  const subcategoryId = product.subcategory_id && product.subcategory_id.trim() ? product.subcategory_id.trim() : null;
+
   const completeProduct: Product = {
     id,
     title,
     slug,
     sku: product.sku || `SP-PROD-${Math.floor(100 + Math.random() * 900)}`,
-    category_id: product.category_id || '',
-    subcategory_id: product.subcategory_id || '',
-    price: product.price || 0,
-    sale_price: product.sale_price,
-    stock: product.stock !== undefined ? product.stock : 20,
+    category_id: categoryId as any,
+    subcategory_id: subcategoryId as any,
+    price: Number(product.price) || 0,
+    sale_price: product.sale_price !== undefined && product.sale_price !== null && (product.sale_price as any) !== '' ? Number(product.sale_price) : undefined,
+    stock: product.stock !== undefined ? Number(product.stock) : 20,
     thumbnail_url: product.thumbnail_url || '/images/products/c355ef86a15549c03989a4d67a7b406a.jpg.webp',
     gallery_urls: product.gallery_urls || [],
     has_sizes: hasSizes,
@@ -558,24 +568,38 @@ export async function saveProduct(product: Partial<Product>): Promise<{ data: Pr
 
     if (!error && data) {
       return { data: data as Product, error: null };
+    } else if (error) {
+      console.error('Supabase saveProduct error:', error);
+      return { data: completeProduct, error };
     }
-  } catch (err) {}
+  } catch (err: any) {
+    console.error('Supabase saveProduct exception:', err);
+    return { data: completeProduct, error: err };
+  }
 
   return { data: completeProduct, error: null };
 }
 
 export async function deleteProduct(id: string): Promise<boolean> {
-  const existingList = await getProducts();
-  const updatedList = existingList.filter(p => p.id !== id);
-
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('sp_cached_products', JSON.stringify(updatedList));
-  }
-  notifyUpdate('sp_products_updated');
-
+  // 1. Remote Database Delete first
   try {
     await supabase.from('products').delete().eq('id', id);
   } catch (e) {}
+
+  // 2. Update local storage cache
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem('sp_cached_products');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          const updated = parsed.filter(p => p.id !== id);
+          localStorage.setItem('sp_cached_products', JSON.stringify(updated));
+        }
+      }
+    } catch (_) {}
+  }
+  notifyUpdate('sp_products_updated');
 
   return true;
 }
@@ -590,7 +614,7 @@ export async function getCategories(): Promise<Category[]> {
       .select(CATEGORY_FIELDS)
       .order('display_order', { ascending: true });
 
-    if (!error && data && data.length > 0) {
+    if (!error && Array.isArray(data) && data.length > 0) {
       if (typeof window !== 'undefined') {
         localStorage.setItem('sp_cached_categories', JSON.stringify(data));
       }
@@ -636,24 +660,31 @@ export async function saveCategory(category: Partial<Category>): Promise<Categor
   notifyUpdate('sp_categories_updated');
 
   try {
-    await supabase.from('categories').upsert(item);
+    const { error } = await supabase.from('categories').upsert(item);
+    if (error) console.error('Supabase saveCategory error:', error);
   } catch (e) {}
 
   return item;
 }
 
 export async function deleteCategory(id: string): Promise<boolean> {
-  const list = await getCategories();
-  const updated = list.filter(c => c.id !== id);
-
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('sp_cached_categories', JSON.stringify(updated));
-  }
-  notifyUpdate('sp_categories_updated');
-
   try {
     await supabase.from('categories').delete().eq('id', id);
   } catch (e) {}
+
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem('sp_cached_categories');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          const updated = parsed.filter(c => c.id !== id);
+          localStorage.setItem('sp_cached_categories', JSON.stringify(updated));
+        }
+      }
+    } catch (_) {}
+  }
+  notifyUpdate('sp_categories_updated');
 
   return true;
 }
@@ -667,7 +698,7 @@ export async function getSubcategories(categoryId?: string): Promise<Subcategory
     if (categoryId) q = q.eq('category_id', categoryId);
 
     const { data, error } = await q;
-    if (!error && data && data.length > 0) return data as Subcategory[];
+    if (!error && Array.isArray(data) && data.length > 0) return data as Subcategory[];
   } catch (e) {}
 
   let list = DEFAULT_SUBCATEGORIES;
@@ -709,24 +740,31 @@ export async function saveSubcategory(sub: Partial<Subcategory>): Promise<Subcat
   notifyUpdate('sp_categories_updated');
 
   try {
-    await supabase.from('subcategories').upsert(item);
+    const { error } = await supabase.from('subcategories').upsert(item);
+    if (error) console.error('Supabase saveSubcategory error:', error);
   } catch (e) {}
 
   return item;
 }
 
 export async function deleteSubcategory(id: string): Promise<boolean> {
-  const list = await getSubcategories();
-  const updated = list.filter(s => s.id !== id);
-
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('sp_cached_subcategories', JSON.stringify(updated));
-  }
-  notifyUpdate('sp_categories_updated');
-
   try {
     await supabase.from('subcategories').delete().eq('id', id);
   } catch (e) {}
+
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem('sp_cached_subcategories');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          const updated = parsed.filter(s => s.id !== id);
+          localStorage.setItem('sp_cached_subcategories', JSON.stringify(updated));
+        }
+      }
+    } catch (_) {}
+  }
+  notifyUpdate('sp_categories_updated');
 
   return true;
 }
@@ -747,7 +785,7 @@ export async function getBanners(options?: { includeInactive?: boolean }): Promi
 
     const { data, error } = await query;
 
-    if (!error && data && data.length > 0) {
+    if (!error && Array.isArray(data) && data.length > 0) {
       if (typeof window !== 'undefined' && !options?.includeInactive) {
         localStorage.setItem('sp_cached_banners', JSON.stringify(data));
       }
@@ -796,24 +834,31 @@ export async function saveBanner(banner: Partial<Banner>): Promise<Banner> {
   notifyUpdate('sp_banners_updated');
 
   try {
-    await supabase.from('banners').upsert(item);
+    const { error } = await supabase.from('banners').upsert(item);
+    if (error) console.error('Supabase saveBanner error:', error);
   } catch (e) {}
 
   return item;
 }
 
 export async function deleteBanner(id: string): Promise<boolean> {
-  const list = await getBanners({ includeInactive: true });
-  const updated = list.filter(b => b.id !== id);
-
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('sp_cached_banners', JSON.stringify(updated));
-  }
-  notifyUpdate('sp_banners_updated');
-
   try {
     await supabase.from('banners').delete().eq('id', id);
   } catch (e) {}
+
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem('sp_cached_banners');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          const updated = parsed.filter(b => b.id !== id);
+          localStorage.setItem('sp_cached_banners', JSON.stringify(updated));
+        }
+      }
+    } catch (_) {}
+  }
+  notifyUpdate('sp_banners_updated');
 
   return true;
 }
@@ -828,7 +873,7 @@ export async function getOrders(): Promise<Order[]> {
       .select(ORDER_FIELDS)
       .order('created_at', { ascending: false });
 
-    if (!error && data && data.length > 0) {
+    if (!error && Array.isArray(data)) {
       if (typeof window !== 'undefined') {
         localStorage.setItem('sp_cached_orders', JSON.stringify(data));
       }
@@ -892,22 +937,28 @@ export async function createOrder(order: Omit<Order, 'id' | 'order_number' | 'cr
 
     if (!error && data) {
       return { data: data as Order, error: null };
+    } else if (error) {
+      console.error('Supabase createOrder error:', error);
+      return { data: fullOrder, error };
     }
-  } catch (err) {}
+  } catch (err: any) {
+    console.error('Supabase createOrder exception:', err);
+    return { data: fullOrder, error: err };
+  }
 
   return { data: fullOrder, error: null };
 }
 
 export async function updateOrder(order: Partial<Order> & { id: string }): Promise<{ data: Order; error: any }> {
   const orders = await getOrders();
-  const existing = orders.find(o => o.id === order.id || o.order_number === order.id);
+  const existing = orders.find(o => o.id === order.id || o.order_number === order.id || (order.order_number && o.order_number === order.order_number));
   const updatedOrder: Order = {
     ...(existing || {} as Order),
     ...order
   };
 
   // 1. Optimistic Local Persistence
-  const updatedList = orders.map(o => (o.id === order.id || o.order_number === order.id) ? updatedOrder : o);
+  const updatedList = orders.map(o => (o.id === order.id || o.order_number === order.id || (order.order_number && o.order_number === order.order_number)) ? updatedOrder : o);
   if (typeof window !== 'undefined') {
     localStorage.setItem('sp_cached_orders', JSON.stringify(updatedList));
   }
@@ -923,51 +974,76 @@ export async function updateOrder(order: Partial<Order> & { id: string }): Promi
 
     if (!error && data) {
       return { data: data as Order, error: null };
+    } else if (error) {
+      console.error('Supabase updateOrder error:', error);
+      return { data: updatedOrder, error };
     }
-  } catch (err) {}
+  } catch (err: any) {
+    console.error('Supabase updateOrder exception:', err);
+    return { data: updatedOrder, error: err };
+  }
 
   return { data: updatedOrder, error: null };
 }
 
 export async function updateOrderStatus(id: string, status: Order['order_status'], paymentStatus?: Order['payment_status']): Promise<boolean> {
-  const orders = await getOrders();
-  const updated = orders.map(o => {
-    if (o.id === id || o.order_number === id) {
-      return {
-        ...o,
-        order_status: status,
-        payment_status: paymentStatus || o.payment_status
-      };
-    }
-    return o;
-  });
-
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('sp_cached_orders', JSON.stringify(updated));
-  }
-  notifyUpdate('sp_orders_updated');
+  const payload: any = { order_status: status };
+  if (paymentStatus) payload.payment_status = paymentStatus;
 
   try {
-    const payload: any = { order_status: status };
-    if (paymentStatus) payload.payment_status = paymentStatus;
-    await supabase.from('orders').update(payload).or(`id.eq.${id},order_number.eq.${id}`);
+    await supabase.from('orders').update(payload).eq('id', id);
   } catch (e) {}
+  try {
+    await supabase.from('orders').update(payload).eq('order_number', id);
+  } catch (e) {}
+
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem('sp_cached_orders');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          const updated = parsed.map((o: any) => {
+            if (o.id === id || o.order_number === id) {
+              return {
+                ...o,
+                order_status: status,
+                payment_status: paymentStatus || o.payment_status
+              };
+            }
+            return o;
+          });
+          localStorage.setItem('sp_cached_orders', JSON.stringify(updated));
+        }
+      }
+    } catch (_) {}
+  }
+  notifyUpdate('sp_orders_updated');
 
   return true;
 }
 
 export async function deleteOrder(id: string): Promise<boolean> {
-  const orders = await getOrders();
-  const updated = orders.filter(o => o.id !== id && o.order_number !== id);
+  try {
+    await supabase.from('orders').delete().eq('id', id);
+  } catch (e) {}
+  try {
+    await supabase.from('orders').delete().eq('order_number', id);
+  } catch (e) {}
 
   if (typeof window !== 'undefined') {
-    localStorage.setItem('sp_cached_orders', JSON.stringify(updated));
+    try {
+      const cached = localStorage.getItem('sp_cached_orders');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          const updated = parsed.filter((o: any) => o.id !== id && o.order_number !== id);
+          localStorage.setItem('sp_cached_orders', JSON.stringify(updated));
+        }
+      }
+    } catch (_) {}
   }
   notifyUpdate('sp_orders_updated');
-
-  try {
-    await supabase.from('orders').delete().or(`id.eq.${id},order_number.eq.${id}`);
-  } catch (e) {}
 
   return true;
 }
@@ -982,7 +1058,7 @@ export async function getCoupons(): Promise<Coupon[]> {
       .select(COUPON_FIELDS)
       .order('created_at', { ascending: false });
 
-    if (!error && data && data.length > 0) {
+    if (!error && Array.isArray(data) && data.length > 0) {
       if (typeof window !== 'undefined') {
         localStorage.setItem('sp_cached_coupons', JSON.stringify(data));
       }
@@ -1028,24 +1104,34 @@ export async function saveCoupon(coupon: Partial<Coupon>): Promise<Coupon> {
   notifyUpdate('sp_coupons_updated');
 
   try {
-    await supabase.from('coupons').upsert(item);
+    const { error } = await supabase.from('coupons').upsert(item);
+    if (error) console.error('Supabase saveCoupon error:', error);
   } catch (e) {}
 
   return item;
 }
 
 export async function deleteCoupon(id: string): Promise<boolean> {
-  const list = await getCoupons();
-  const updated = list.filter(c => c.id !== id && c.code !== id);
+  try {
+    await supabase.from('coupons').delete().eq('id', id);
+  } catch (e) {}
+  try {
+    await supabase.from('coupons').delete().eq('code', id);
+  } catch (e) {}
 
   if (typeof window !== 'undefined') {
-    localStorage.setItem('sp_cached_coupons', JSON.stringify(updated));
+    try {
+      const cached = localStorage.getItem('sp_cached_coupons');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          const updated = parsed.filter((c: any) => c.id !== id && c.code !== id);
+          localStorage.setItem('sp_cached_coupons', JSON.stringify(updated));
+        }
+      }
+    } catch (_) {}
   }
   notifyUpdate('sp_coupons_updated');
-
-  try {
-    await supabase.from('coupons').delete().or(`id.eq.${id},code.eq.${id}`);
-  } catch (e) {}
 
   return true;
 }
@@ -1121,9 +1207,15 @@ export async function getSiteSettings(): Promise<SiteSettings> {
   return DEFAULT_SITE_SETTINGS;
 }
 
-export async function saveSiteSettings(settings: Partial<SiteSettings>): Promise<boolean> {
+export async function saveSiteSettings(settings: Partial<SiteSettings>): Promise<{ data: SiteSettings; error: any }> {
   const current = await getSiteSettings();
-  const payload = { ...current, ...settings, id: 'current', updated_at: new Date().toISOString() };
+  const payload: SiteSettings = {
+    ...current,
+    ...settings,
+    id: 'current',
+    base_shipping_rate: Number(settings.base_shipping_rate ?? current.base_shipping_rate) || 0,
+    free_shipping_threshold: Number(settings.free_shipping_threshold ?? current.free_shipping_threshold) || 2500,
+  };
 
   if (typeof window !== 'undefined') {
     localStorage.setItem('sp_cached_settings', JSON.stringify(payload));
@@ -1131,10 +1223,20 @@ export async function saveSiteSettings(settings: Partial<SiteSettings>): Promise
   notifyUpdate('sp_settings_updated');
 
   try {
-    await supabase.from('site_settings').upsert(payload);
-  } catch (e) {}
+    const { data, error } = await supabase.from('site_settings').upsert({
+      ...payload,
+      updated_at: new Date().toISOString()
+    }).select(SETTINGS_FIELDS).single();
 
-  return true;
+    if (error) {
+      console.error('Supabase saveSiteSettings error:', error);
+      return { data: payload, error };
+    }
+    return { data: (data as SiteSettings) || payload, error: null };
+  } catch (e: any) {
+    console.error('Supabase saveSiteSettings exception:', e);
+    return { data: payload, error: e };
+  }
 }
 
 // ==========================================
