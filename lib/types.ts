@@ -17,6 +17,11 @@ export interface Subcategory {
   created_at?: string;
 }
 
+export interface ProductVariationOption {
+  name: string;
+  price: number;
+}
+
 export interface Product {
   id: string;
   title: string;
@@ -29,8 +34,10 @@ export interface Product {
   stock: number;
   thumbnail_url: string;
   gallery_urls?: string[];
-  sizes?: string[];
-  colors?: string[];
+  has_sizes?: boolean;
+  sizes?: (ProductVariationOption | string)[];
+  has_colors?: boolean;
+  colors?: (ProductVariationOption | string)[];
   description?: string;
   features?: string[];
   is_featured?: boolean;
@@ -38,6 +45,24 @@ export interface Product {
   is_active?: boolean;
   created_at?: string;
   updated_at?: string;
+}
+
+export function normalizeVariationOptions(options?: (ProductVariationOption | string)[]): ProductVariationOption[] {
+  if (!options || !Array.isArray(options)) return [];
+  return options
+    .map(opt => {
+      if (typeof opt === 'string') {
+        const trimmed = opt.trim();
+        return trimmed ? { name: trimmed, price: 0 } : null;
+      }
+      if (opt && typeof opt === 'object') {
+        const name = (opt.name || '').trim();
+        const price = Number(opt.price) || 0;
+        return name ? { name, price: Math.max(0, price) } : null;
+      }
+      return null;
+    })
+    .filter((opt): opt is ProductVariationOption => opt !== null);
 }
 
 export interface Banner {

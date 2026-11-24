@@ -5,7 +5,14 @@ import { CartItem, Product } from '@/lib/types';
 
 interface CartContextType {
   items: CartItem[];
-  addToCart: (product: Product, size?: string, color?: string, quantity?: number) => void;
+  addToCart: (
+    product: Product,
+    size?: string,
+    color?: string,
+    quantity?: number,
+    customPrice?: number,
+    openDrawer?: boolean
+  ) => void;
   removeFromCart: (productId: string, size?: string, color?: string) => void;
   updateQuantity: (productId: string, quantity: number, size?: string, color?: string) => void;
   clearCart: () => void;
@@ -44,11 +51,26 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
   }, [items, isLoaded]);
 
-  const addToCart = (product: Product, size?: string, color?: string, quantity: number = 1) => {
+  const addToCart = (
+    product: Product,
+    size?: string,
+    color?: string,
+    quantity: number = 1,
+    customPrice?: number,
+    openDrawer: boolean = true
+  ) => {
     setItems(prev => {
-      const chosenSize = size || (product.sizes && product.sizes.length > 0 ? product.sizes[0] : 'Standard');
-      const chosenColor = color || (product.colors && product.colors.length > 0 ? product.colors[0] : 'Default');
-      const price = product.sale_price && product.sale_price < product.price ? product.sale_price : product.price;
+      const getFirstOptionName = (opts?: any[]) => {
+        if (!opts || opts.length === 0) return '';
+        const first = opts[0];
+        return typeof first === 'string' ? first : first.name;
+      };
+
+      const chosenSize = size || getFirstOptionName(product.sizes) || 'Standard';
+      const chosenColor = color || getFirstOptionName(product.colors) || 'Default';
+      
+      const basePrice = product.sale_price && product.sale_price < product.price ? product.sale_price : product.price;
+      const price = typeof customPrice === 'number' && customPrice > 0 ? customPrice : basePrice;
 
       const existingIndex = prev.findIndex(
         item => item.product_id === product.id && item.size === chosenSize && item.color === chosenColor
@@ -58,6 +80,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         const updated = [...prev];
         const newQty = updated[existingIndex].quantity + quantity;
         updated[existingIndex].quantity = Math.min(newQty, product.stock || 99);
+        updated[existingIndex].price = price;
         return updated;
       } else {
         return [
@@ -76,7 +99,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    setIsCartOpen(true);
+    if (openDrawer) {
+      setIsCartOpen(true);
+    }
   };
 
   const removeFromCart = (productId: string, size?: string, color?: string) => {

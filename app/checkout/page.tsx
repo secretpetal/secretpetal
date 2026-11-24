@@ -609,7 +609,11 @@ export default function CheckoutPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium text-gray-800 truncate">{item.title}</p>
-                        <p className="text-[11px] text-gray-400">Qty: {item.quantity} {item.size ? `• Size: ${item.size}` : ''}</p>
+                        <p className="text-[11px] text-gray-400">
+                          Qty: {item.quantity}
+                          {item.size && item.size !== 'Standard' ? ` • Size: ${item.size}` : ''}
+                          {item.color && item.color !== 'Default' ? ` • Color: ${item.color}` : ''}
+                        </p>
                       </div>
                       <span className="text-xs font-bold text-burgundy">
                         Rs. {(item.price * item.quantity).toLocaleString()}

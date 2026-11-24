@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -16,7 +16,7 @@ import {
   ChevronRight,
   Heart
 } from 'lucide-react';
-import { Product } from '@/lib/types';
+import { Product, normalizeVariationOptions } from '@/lib/types';
 import { getProductBySlug, getProducts } from '@/lib/db';
 import { useCart } from '@/context/CartContext';
 import ProductCard from '@/components/ProductCard';
@@ -50,8 +50,14 @@ export default function ProductDetailClient({ initialSlug }: { initialSlug: stri
       if (item) {
         setProduct(item);
         setSelectedImage(item.thumbnail_url);
-        if (item.sizes && item.sizes.length > 0) setSelectedSize(item.sizes[0]);
-        if (item.colors && item.colors.length > 0) setSelectedColor(item.colors[0]);
+        
+        const normSizes = item.has_sizes !== false ? normalizeVariationOptions(item.sizes) : [];
+        if (normSizes.length > 0) setSelectedSize(normSizes[0].name);
+        else setSelectedSize('');
+
+        const normColors = item.has_colors !== false ? normalizeVariationOptions(item.colors) : [];
+        if (normColors.length > 0) setSelectedColor(normColors[0].name);
+        else setSelectedColor('');
 
         // Load related items in same category
         const related = await getProducts({ categoryId: item.category_id, limit: 4 });
@@ -61,6 +67,16 @@ export default function ProductDetailClient({ initialSlug }: { initialSlug: stri
     }
     loadData();
   }, [initialSlug]);
+
+  const sizeOptions = useMemo(() => {
+    if (!product || product.has_sizes === false) return [];
+    return normalizeVariationOptions(product.sizes);
+  }, [product]);
+
+  const colorOptions = useMemo(() => {
+    if (!product || product.has_colors === false) return [];
+    return normalizeVariationOptions(product.colors);
+  }, [product]);
 
   if (loading) {
     return (
@@ -83,20 +99,31 @@ export default function ProductDetailClient({ initialSlug }: { initialSlug: stri
   }
 
   const allImages = [product.thumbnail_url, ...(product.gallery_urls || [])];
-  const hasDiscount = product.sale_price && product.sale_price < product.price;
-  const currentPrice = hasDiscount ? product.sale_price! : product.price;
+  const hasDiscount = Boolean(product.sale_price && product.sale_price < product.price);
+
+  // Real-Time Price Calculation Formula:
+  // Final Active Price = Base Price + Selected Size Additional Price + Selected Color Additional Price
+  const selectedSizeObj = sizeOptions.find((s) => s.name === selectedSize);
+  const selectedColorObj = colorOptions.find((c) => c.name === selectedColor);
+  const sizeAddon = selectedSizeObj ? (selectedSizeObj.price || 0) : 0;
+  const colorAddon = selectedColorObj ? (selectedColorObj.price || 0) : 0;
+
+  const currentBasePrice = hasDiscount ? product.sale_price! : product.price;
+  const activeFinalPrice = currentBasePrice + sizeAddon + colorAddon;
+  const activeOriginalPrice = product.price + sizeAddon + colorAddon;
+
   const discountPercent = hasDiscount
     ? Math.round(((product.price - product.sale_price!) / product.price) * 100)
     : 0;
 
   const handleBuyNow = () => {
-    addToCart(product, selectedSize, selectedColor, quantity);
+    addToCart(product, selectedSize, selectedColor, quantity, activeFinalPrice, false);
     router.push('/checkout');
   };
 
   const handleWhatsAppOrder = () => {
     if (!product) return;
-    const effectivePrice = product.sale_price || product.price;
+    const effectivePrice = activeFinalPrice;
     const totalAmount = effectivePrice * quantity;
     const siteUrl = typeof window !== 'undefined' ? window.location.origin : 'https://secretpetal.store';
     const productUrl = `${siteUrl}/product?slug=${product.slug}`;
@@ -106,8 +133,8 @@ export default function ProductDetailClient({ initialSlug }: { initialSlug: stri
       '━━━━━━━━━━━━━━━━━━━━━',
       `🛍️ *Product:* ${product.title}`,
       `💰 *Price:* Rs. ${effectivePrice.toLocaleString()}`,
-      selectedSize ? `📏 *Size:* ${selectedSize}` : null,
-      selectedColor ? `🎨 *Color:* ${selectedColor}` : null,
+      selectedSize ? `📏 *Size:* ${selectedSize}${sizeAddon > 0 ? ` (+Rs. ${sizeAddon.toLocaleString()})` : ''}` : null,
+      selectedColor ? `🎨 *Color:* ${selectedColor}${colorAddon > 0 ? ` (+Rs. ${colorAddon.toLocaleString()})` : ''}` : null,
       `🔢 *Quantity:* ${quantity}`,
       `💵 *Estimated Total:* Rs. ${totalAmount.toLocaleString()}`,
       '━━━━━━━━━━━━━━━━━━━━━',
@@ -207,11 +234,11 @@ export default function ProductDetailClient({ initialSlug }: { initialSlug: stri
               {/* Price */}
               <div className="flex items-baseline gap-3 p-3 bg-blush-50/60 rounded-xl border border-rose-100 mb-6">
                 <span className="font-serif font-bold text-2xl sm:text-3xl text-burgundy">
-                  Rs. {currentPrice.toLocaleString()}
+                  Rs. {activeFinalPrice.toLocaleString()}
                 </span>
                 {hasDiscount && (
                   <span className="text-sm sm:text-base text-gray-400 line-through">
-                    Rs. {product.price.toLocaleString()}
+                    Rs. {activeOriginalPrice.toLocaleString()}
                   </span>
                 )}
                 <span className="text-[11px] text-emerald-700 font-semibold ml-auto">
@@ -220,7 +247,7 @@ export default function ProductDetailClient({ initialSlug }: { initialSlug: stri
               </div>
 
               {/* Size Selector */}
-              {product.sizes && product.sizes.length > 0 && (
+              {sizeOptions.length > 0 && (
                 <div className="mb-5">
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-xs font-bold text-gray-800">
@@ -236,45 +263,69 @@ export default function ProductDetailClient({ initialSlug }: { initialSlug: stri
                     </button>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {product.sizes.map((size) => (
-                      <button
-                        key={size}
-                        type="button"
-                        onClick={() => setSelectedSize(size)}
-                        className={`min-w-12 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                          selectedSize === size
-                            ? 'bg-burgundy text-white border-burgundy shadow-xs'
-                            : 'bg-white text-gray-700 border-gray-200 hover:border-burgundy'
-                        }`}
-                      >
-                        {size}
-                      </button>
-                    ))}
+                    {sizeOptions.map((opt) => {
+                      const isSelected = selectedSize === opt.name;
+                      return (
+                        <button
+                          key={opt.name}
+                          type="button"
+                          onClick={() => setSelectedSize(opt.name)}
+                          className={`min-w-12 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 ${
+                            isSelected
+                              ? 'bg-burgundy text-white border-burgundy shadow-xs'
+                              : 'bg-white text-gray-700 border-gray-200 hover:border-burgundy'
+                          }`}
+                        >
+                          <span>{opt.name}</span>
+                          {opt.price > 0 && (
+                            <span
+                              className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
+                                isSelected ? 'bg-white/20 text-white' : 'bg-rose-100 text-burgundy'
+                              }`}
+                            >
+                              +Rs. {opt.price.toLocaleString()}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
               {/* Color Selector */}
-              {product.colors && product.colors.length > 0 && (
+              {colorOptions.length > 0 && (
                 <div className="mb-6">
                   <label className="block text-xs font-bold text-gray-800 mb-2">
                     Available Colors: <span className="text-burgundy font-normal">{selectedColor}</span>
                   </label>
                   <div className="flex flex-wrap gap-2">
-                    {product.colors.map((color) => (
-                      <button
-                        key={color}
-                        type="button"
-                        onClick={() => setSelectedColor(color)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                          selectedColor === color
-                            ? 'bg-rose-100/70 border-burgundy text-burgundy font-bold'
-                            : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                        }`}
-                      >
-                        {color}
-                      </button>
-                    ))}
+                    {colorOptions.map((opt) => {
+                      const isSelected = selectedColor === opt.name;
+                      return (
+                        <button
+                          key={opt.name}
+                          type="button"
+                          onClick={() => setSelectedColor(opt.name)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all flex items-center gap-1.5 ${
+                            isSelected
+                              ? 'bg-rose-100/70 border-burgundy text-burgundy font-bold'
+                              : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          <span>{opt.name}</span>
+                          {opt.price > 0 && (
+                            <span
+                              className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
+                                isSelected ? 'bg-burgundy text-white' : 'bg-rose-100 text-burgundy'
+                              }`}
+                            >
+                              +Rs. {opt.price.toLocaleString()}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -302,11 +353,11 @@ export default function ProductDetailClient({ initialSlug }: { initialSlug: stri
 
                   <button
                     type="button"
-                    onClick={() => addToCart(product, selectedSize, selectedColor, quantity)}
+                    onClick={() => addToCart(product, selectedSize, selectedColor, quantity, activeFinalPrice, true)}
                     className="flex-1 py-3 px-4 bg-blush-100 hover:bg-blush text-burgundy font-bold text-xs sm:text-sm rounded-xl transition-colors border border-burgundy/20 flex items-center justify-center gap-2 shadow-xs"
                   >
                     <ShoppingBag className="w-4 h-4" />
-                    <span>Add to Bag</span>
+                    <span>Add to Bag • Rs. {(activeFinalPrice * quantity).toLocaleString()}</span>
                   </button>
                 </div>
 

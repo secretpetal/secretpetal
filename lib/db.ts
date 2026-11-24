@@ -505,6 +505,9 @@ export async function saveProduct(product: Partial<Product>): Promise<{ data: Pr
   const title = (product.title || 'Untitled Product').trim();
   const slug = (product.slug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '')).trim();
 
+  const hasSizes = product.has_sizes ?? (product.sizes ? product.sizes.length > 0 : true);
+  const hasColors = product.has_colors ?? (product.colors ? product.colors.length > 0 : true);
+
   const completeProduct: Product = {
     id,
     title,
@@ -517,8 +520,10 @@ export async function saveProduct(product: Partial<Product>): Promise<{ data: Pr
     stock: product.stock !== undefined ? product.stock : 20,
     thumbnail_url: product.thumbnail_url || '/images/products/c355ef86a15549c03989a4d67a7b406a.jpg.webp',
     gallery_urls: product.gallery_urls || [],
-    sizes: product.sizes && product.sizes.length > 0 ? product.sizes : ['Small', 'Medium', 'Large'],
-    colors: product.colors && product.colors.length > 0 ? product.colors : ['Classic'],
+    has_sizes: hasSizes,
+    sizes: hasSizes ? (product.sizes || []) : [],
+    has_colors: hasColors,
+    colors: hasColors ? (product.colors || []) : [],
     description: product.description || '',
     features: product.features || [],
     is_featured: product.is_featured ?? true,

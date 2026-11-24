@@ -31,10 +31,15 @@ import {
   Search,
   ExternalLink,
   Lock,
-  Ticket
+  Ticket,
+  Ruler,
+  Palette,
+  Loader2
 } from 'lucide-react';
 import {
   Product,
+  ProductVariationOption,
+  normalizeVariationOptions,
   Category,
   Subcategory,
   Banner,
@@ -112,6 +117,15 @@ export default function AdminPage() {
   // Modals state
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
+
+  // Dynamic variation builder & product form state
+  const [productHasSizes, setProductHasSizes] = useState(true);
+  const [productSizesList, setProductSizesList] = useState<ProductVariationOption[]>([]);
+  const [productHasColors, setProductHasColors] = useState(true);
+  const [productColorsList, setProductColorsList] = useState<ProductVariationOption[]>([]);
+  const [productFeaturesRaw, setProductFeaturesRaw] = useState('');
+  const [productDescriptionRaw, setProductDescriptionRaw] = useState('');
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
 
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Partial<Category> | null>(null);
@@ -293,6 +307,118 @@ export default function AdminPage() {
     document.body.removeChild(link);
 
     triggerToast('Product catalog exported successfully to CSV!');
+  };
+
+  // Open Product Modal (New or Edit)
+  const openProductModal = (prod?: Product) => {
+    if (prod) {
+      setEditingProduct(prod);
+      const hasS = prod.has_sizes ?? (prod.sizes && prod.sizes.length > 0 ? true : false);
+      setProductHasSizes(hasS);
+      const normSizes = normalizeVariationOptions(prod.sizes);
+      setProductSizesList(normSizes.length > 0 ? normSizes : [{ name: 'Standard', price: 0 }]);
+
+      const hasC = prod.has_colors ?? (prod.colors && prod.colors.length > 0 ? true : false);
+      setProductHasColors(hasC);
+      const normColors = normalizeVariationOptions(prod.colors);
+      setProductColorsList(normColors.length > 0 ? normColors : [{ name: 'Default', price: 0 }]);
+
+      setProductFeaturesRaw(Array.isArray(prod.features) ? prod.features.join('\n') : '');
+      setProductDescriptionRaw(prod.description || '');
+    } else {
+      setEditingProduct({
+        title: '',
+        slug: '',
+        sku: `SP-BRA-${Math.floor(100 + Math.random() * 900)}`,
+        price: 2000,
+        sale_price: 1500,
+        stock: 20,
+        thumbnail_url: '',
+        gallery_urls: [],
+        category_id: categories.length > 0 ? categories[0].id : '',
+        subcategory_id: '',
+        is_featured: true,
+        is_flash_deal: false,
+        is_active: true
+      });
+      setProductHasSizes(true);
+      setProductSizesList([
+        { name: '34B', price: 0 },
+        { name: '36B', price: 0 },
+        { name: '38B', price: 0 },
+        { name: '40B', price: 0 }
+      ]);
+      setProductHasColors(true);
+      setProductColorsList([
+        { name: 'Blush Pink', price: 0 },
+        { name: 'Black', price: 0 },
+        { name: 'Nude', price: 0 }
+      ]);
+      setProductFeaturesRaw('100% Cotton & Lace\nWireless Comfort\nGentle Posture Support');
+      setProductDescriptionRaw('');
+    }
+    setIsProductModalOpen(true);
+  };
+
+  const addSizeRow = () => {
+    setProductSizesList(prev => [...prev, { name: '', price: 0 }]);
+  };
+
+  const updateSizeRow = (index: number, field: 'name' | 'price', val: any) => {
+    setProductSizesList(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: val };
+      return updated;
+    });
+  };
+
+  const removeSizeRow = (index: number) => {
+    setProductSizesList(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  const addColorRow = () => {
+    setProductColorsList(prev => [...prev, { name: '', price: 0 }]);
+  };
+
+  const updateColorRow = (index: number, field: 'name' | 'price', val: any) => {
+    setProductColorsList(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: val };
+      return updated;
+    });
+  };
+
+  const removeColorRow = (index: number) => {
+    setProductColorsList(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleSaveProductSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSavingProduct || !editingProduct) return;
+    setIsSavingProduct(true);
+    try {
+      const validSizes = productHasSizes ? productSizesList.filter(s => s.name.trim().length > 0) : [];
+      const validColors = productHasColors ? productColorsList.filter(c => c.name.trim().length > 0) : [];
+      const parsedFeatures = productFeaturesRaw.split('\n').map(l => l.trim()).filter(Boolean);
+
+      await saveProduct({
+        ...editingProduct,
+        has_sizes: productHasSizes,
+        sizes: validSizes,
+        has_colors: productHasColors,
+        colors: validColors,
+        features: parsedFeatures,
+        description: productDescriptionRaw
+      });
+
+      await loadAllData();
+      setIsProductModalOpen(false);
+      triggerToast('Product saved successfully');
+    } catch (err) {
+      triggerToast('Error saving product');
+    } finally {
+      setIsSavingProduct(false);
+    }
   };
 
   // ==========================================
@@ -676,26 +802,7 @@ export default function AdminPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setEditingProduct({
-                      title: '',
-                      slug: '',
-                      sku: 'SP-BRA-',
-                      price: 2000,
-                      sale_price: 1500,
-                      stock: 20,
-                      sizes: ['32B', '34B', '36B', '38B'],
-                      colors: ['Blush Pink', 'Black', 'Nude'],
-                      thumbnail_url: '',
-                      gallery_urls: [],
-                      description: '',
-                      features: ['100% Cotton & Lace', 'Wireless Comfort'],
-                      is_featured: true,
-                      is_flash_deal: false,
-                      is_active: true
-                    });
-                    setIsProductModalOpen(true);
-                  }}
+                  onClick={() => openProductModal()}
                   className="px-3.5 py-1.5 bg-burgundy hover:bg-burgundy-900 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-xs"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -780,10 +887,7 @@ export default function AdminPage() {
                             </a>
                             <button
                               type="button"
-                              onClick={() => {
-                                setEditingProduct(p);
-                                setIsProductModalOpen(true);
-                              }}
+                              onClick={() => openProductModal(p)}
                               className="p-1.5 text-gray-600 hover:text-burgundy bg-gray-50 hover:bg-blush-50 rounded-lg transition-colors align-middle"
                               title="Edit Product"
                             >
@@ -1704,13 +1808,7 @@ export default function AdminPage() {
             </div>
 
             <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                await saveProduct(editingProduct);
-                await loadAllData();
-                setIsProductModalOpen(false);
-                triggerToast('Product saved successfully');
-              }}
+              onSubmit={handleSaveProductSubmit}
               className="space-y-4 text-xs"
             >
               <div>
@@ -1881,57 +1979,230 @@ export default function AdminPage() {
                 )}
               </div>
 
-              {/* Sizes (Comma Separated) with Live Pill Preview */}
-              <div>
-                <label className="block font-semibold mb-1">
-                  Available Sizes (Separate with commas, e.g. 34B, 36B, 38B, 40B or Small, Medium, Large)
-                </label>
-                <input
-                  type="text"
-                  placeholder="34B, 36B, 38B, 40B, 42B"
-                  value={Array.isArray(editingProduct.sizes) ? editingProduct.sizes.join(', ') : (editingProduct.sizes || '')}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    const parsed = raw.split(',').map(s => s.trim()).filter(Boolean);
-                    setEditingProduct({ ...editingProduct, sizes: parsed });
-                  }}
-                  className="w-full px-3 py-2 border rounded-lg text-xs"
-                />
-                {editingProduct.sizes && editingProduct.sizes.length > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-1">
-                    {editingProduct.sizes.map((sz, szIdx) => (
-                      <span key={szIdx} className="px-2 py-0.5 bg-burgundy/10 text-burgundy font-semibold rounded text-[11px]">
-                        {sz}
-                      </span>
-                    ))}
+              {/* ======================================================== */}
+              {/* SIZES & PRICING VARIATION BUILDER WITH ON/OFF TOGGLE */}
+              {/* ======================================================== */}
+              <div className="bg-rose-50/40 border border-rose-200/80 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-burgundy/10 text-burgundy flex items-center justify-center">
+                      <Ruler className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-xs sm:text-sm text-gray-900">Available Sizes &amp; Pricing</h4>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          productHasSizes ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          {productHasSizes ? 'Enabled' : 'Disabled (Free Size)'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-500">Optionally add extra charges per size over the base price.</p>
+                    </div>
+                  </div>
+
+                  {/* Toggle Switch */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !productHasSizes;
+                      setProductHasSizes(next);
+                      if (next && productSizesList.length === 0) {
+                        setProductSizesList([{ name: 'Standard', price: 0 }]);
+                      }
+                    }}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      productHasSizes ? 'bg-burgundy' : 'bg-gray-300'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        productHasSizes ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {productHasSizes ? (
+                  <div className="space-y-2 pt-2 border-t border-rose-100">
+                    <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider px-1">
+                      <span className="col-span-7">Size Option Name</span>
+                      <span className="col-span-4">+Addl. Price (PKR)</span>
+                      <span className="col-span-1 text-center">Delete</span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {productSizesList.map((item, idx) => (
+                        <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                          <div className="col-span-7">
+                            <input
+                              type="text"
+                              placeholder="e.g. Small, 34B, XXL"
+                              value={item.name}
+                              onChange={(e) => updateSizeRow(idx, 'name', e.target.value)}
+                              className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold focus:border-burgundy focus:ring-1 focus:ring-burgundy"
+                              required
+                            />
+                          </div>
+
+                          <div className="col-span-4 relative">
+                            <span className="absolute left-2.5 top-1.5 text-gray-400 text-xs font-medium">+Rs.</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="50"
+                              placeholder="0"
+                              value={item.price === 0 ? '' : item.price}
+                              onChange={(e) => updateSizeRow(idx, 'price', e.target.value === '' ? 0 : Math.max(0, parseFloat(e.target.value) || 0))}
+                              className="w-full pl-11 pr-2 py-1.5 border border-gray-200 rounded-lg text-xs font-mono font-medium focus:border-burgundy focus:ring-1 focus:ring-burgundy"
+                            />
+                          </div>
+
+                          <div className="col-span-1 flex justify-center">
+                            <button
+                              type="button"
+                              onClick={() => removeSizeRow(idx)}
+                              disabled={productSizesList.length <= 1}
+                              className="p-1.5 text-gray-400 hover:text-red-600 disabled:opacity-30 disabled:hover:text-gray-400 transition-colors rounded-lg hover:bg-red-50"
+                              title="Delete size option"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <button
+                        type="button"
+                        onClick={addSizeRow}
+                        className="text-xs font-semibold text-burgundy hover:text-burgundy-900 flex items-center gap-1.5 py-1 px-2.5 rounded-lg border border-dashed border-rose-300 hover:bg-rose-100/60 transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>+ Add Another Option</span>
+                      </button>
+
+                      <span className="text-[10px] text-gray-400">Leave price as 0 or empty for standard base price.</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-gray-100/70 rounded-xl text-center text-xs text-gray-500 font-medium">
+                    Sizes disabled for this product. Storefront will completely hide the size selector.
                   </div>
                 )}
               </div>
 
-              {/* Colors (Comma Separated) with Live Preview */}
-              <div>
-                <label className="block font-semibold mb-1">
-                  Available Colors (Separate with commas, e.g. Baby Pink, Snow White, Jet Black)
-                </label>
-                <input
-                  type="text"
-                  placeholder="Baby Pink, Snow White, Classic Black"
-                  value={Array.isArray(editingProduct.colors) ? editingProduct.colors.join(', ') : (editingProduct.colors || '')}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    const parsed = raw.split(',').map(c => c.trim()).filter(Boolean);
-                    setEditingProduct({ ...editingProduct, colors: parsed });
-                  }}
-                  className="w-full px-3 py-2 border rounded-lg text-xs"
-                />
-                {editingProduct.colors && editingProduct.colors.length > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-1">
-                    {editingProduct.colors.map((col, cIdx) => (
-                      <span key={cIdx} className="px-2 py-0.5 bg-gray-100 text-gray-800 rounded text-[11px] flex items-center gap-1 font-medium">
-                        <span className="w-2 h-2 rounded-full bg-burgundy/60" />
-                        {col}
-                      </span>
-                    ))}
+              {/* ======================================================== */}
+              {/* COLORS & PRICING VARIATION BUILDER WITH ON/OFF TOGGLE */}
+              {/* ======================================================== */}
+              <div className="bg-rose-50/40 border border-rose-200/80 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-burgundy/10 text-burgundy flex items-center justify-center">
+                      <Palette className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-xs sm:text-sm text-gray-900">Available Colors &amp; Pricing</h4>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          productHasColors ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          {productHasColors ? 'Enabled' : 'Disabled (Single Color)'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-500">Optionally add extra charges per color over the base price.</p>
+                    </div>
+                  </div>
+
+                  {/* Toggle Switch */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !productHasColors;
+                      setProductHasColors(next);
+                      if (next && productColorsList.length === 0) {
+                        setProductColorsList([{ name: 'Default', price: 0 }]);
+                      }
+                    }}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      productHasColors ? 'bg-burgundy' : 'bg-gray-300'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        productHasColors ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {productHasColors ? (
+                  <div className="space-y-2 pt-2 border-t border-rose-100">
+                    <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider px-1">
+                      <span className="col-span-7">Color Option Name</span>
+                      <span className="col-span-4">+Addl. Price (PKR)</span>
+                      <span className="col-span-1 text-center">Delete</span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {productColorsList.map((item, idx) => (
+                        <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                          <div className="col-span-7">
+                            <input
+                              type="text"
+                              placeholder="e.g. Blush Pink, Jet Black, Custom Dye"
+                              value={item.name}
+                              onChange={(e) => updateColorRow(idx, 'name', e.target.value)}
+                              className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold focus:border-burgundy focus:ring-1 focus:ring-burgundy"
+                              required
+                            />
+                          </div>
+
+                          <div className="col-span-4 relative">
+                            <span className="absolute left-2.5 top-1.5 text-gray-400 text-xs font-medium">+Rs.</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="50"
+                              placeholder="0"
+                              value={item.price === 0 ? '' : item.price}
+                              onChange={(e) => updateColorRow(idx, 'price', e.target.value === '' ? 0 : Math.max(0, parseFloat(e.target.value) || 0))}
+                              className="w-full pl-11 pr-2 py-1.5 border border-gray-200 rounded-lg text-xs font-mono font-medium focus:border-burgundy focus:ring-1 focus:ring-burgundy"
+                            />
+                          </div>
+
+                          <div className="col-span-1 flex justify-center">
+                            <button
+                              type="button"
+                              onClick={() => removeColorRow(idx)}
+                              disabled={productColorsList.length <= 1}
+                              className="p-1.5 text-gray-400 hover:text-red-600 disabled:opacity-30 disabled:hover:text-gray-400 transition-colors rounded-lg hover:bg-red-50"
+                              title="Delete color option"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <button
+                        type="button"
+                        onClick={addColorRow}
+                        className="text-xs font-semibold text-burgundy hover:text-burgundy-900 flex items-center gap-1.5 py-1 px-2.5 rounded-lg border border-dashed border-rose-300 hover:bg-rose-100/60 transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>+ Add Another Option</span>
+                      </button>
+
+                      <span className="text-[10px] text-gray-400">Leave price as 0 or empty for standard base price.</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-gray-100/70 rounded-xl text-center text-xs text-gray-500 font-medium">
+                    Colors disabled for this product. Storefront will completely hide the color selector.
                   </div>
                 )}
               </div>
@@ -1939,16 +2210,13 @@ export default function AdminPage() {
               {/* Key Features / Bullet points */}
               <div>
                 <label className="block font-semibold mb-1">
-                  Key Features / Bullets (One per line or comma-separated)
+                  Key Features / Bullets (One per line — press Enter for new line)
                 </label>
                 <textarea
-                  rows={2}
+                  rows={3}
                   placeholder="Criss-cross back posture support&#10;Instant front snap closure&#10;100% Wireless comfort"
-                  value={Array.isArray(editingProduct.features) ? editingProduct.features.join('\n') : (editingProduct.features || '')}
-                  onChange={(e) => {
-                    const lines = e.target.value.split('\n').map(l => l.trim()).filter(Boolean);
-                    setEditingProduct({ ...editingProduct, features: lines });
-                  }}
+                  value={productFeaturesRaw}
+                  onChange={(e) => setProductFeaturesRaw(e.target.value)}
                   className="w-full px-3 py-2 border rounded-lg text-xs"
                 />
               </div>
@@ -1957,8 +2225,9 @@ export default function AdminPage() {
                 <label className="block font-semibold mb-1">Full Description</label>
                 <textarea
                   rows={3}
-                  value={editingProduct.description || ''}
-                  onChange={(e) => setEditingProduct({ ...editingProduct, description: e.target.value })}
+                  placeholder="Detailed product information, fabric breakdown, and wash care instructions..."
+                  value={productDescriptionRaw}
+                  onChange={(e) => setProductDescriptionRaw(e.target.value)}
                   className="w-full px-3 py-2 border rounded-lg text-xs"
                 />
               </div>
@@ -1989,15 +2258,22 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => setIsProductModalOpen(false)}
-                  className="px-4 py-2 border rounded-lg"
+                  disabled={isSavingProduct}
+                  className="px-4 py-2 border rounded-lg hover:bg-gray-50 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-burgundy text-white font-bold rounded-lg"
+                  disabled={isSavingProduct}
+                  className={`px-5 py-2 text-white font-bold rounded-lg flex items-center gap-2 shadow-xs transition-all ${
+                    isSavingProduct
+                      ? 'bg-burgundy/60 cursor-not-allowed'
+                      : 'bg-burgundy hover:bg-burgundy-900 active:scale-[0.98]'
+                  }`}
                 >
-                  Save Product
+                  {isSavingProduct && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{isSavingProduct ? 'Saving Product...' : 'Save Product'}</span>
                 </button>
               </div>
             </form>

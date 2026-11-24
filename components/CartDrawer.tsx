@@ -100,9 +100,13 @@ export default function CartDrawer() {
                 <div className="flex-1 flex flex-col justify-between">
                   <div className="pr-6">
                     <h4 className="text-xs font-medium text-gray-800 line-clamp-1">{item.title}</h4>
-                    <div className="text-[11px] text-gray-500 mt-0.5 flex gap-2">
-                      {item.size && <span>Size: <strong className="text-gray-700">{item.size}</strong></span>}
-                      {item.color && <span>• Color: <strong className="text-gray-700">{item.color}</strong></span>}
+                    <div className="text-[11px] text-gray-500 mt-0.5 flex flex-wrap gap-x-2">
+                      {item.size && item.size !== 'Standard' && (
+                        <span>Size: <strong className="text-gray-700">{item.size}</strong></span>
+                      )}
+                      {item.color && item.color !== 'Default' && (
+                        <span>Color: <strong className="text-gray-700">{item.color}</strong></span>
+                      )}
                     </div>
                   </div>
 
