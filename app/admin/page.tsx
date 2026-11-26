@@ -1455,13 +1455,13 @@ export default function AdminPage() {
                     Top Announcement Bar Line (Header Promo Marquee)
                   </label>
                   <p className="text-[11px] text-gray-500 mb-2">
-                    Displayed at the very top of the website header on all desktop &amp; mobile pages.
+                    Scrolls smoothly in one row at the very top of mobile &amp; desktop pages. Add emojis or extra spaces to separate multiple offers.
                   </p>
                   <input
                     type="text"
-                    value={settings.announcement_text ?? 'FREE Shipping across Pakistan on orders above Rs. 2,500'}
-                    onChange={(e) => setSettings({ ...settings, announcement_text: e.target.value })}
-                    placeholder="FREE Shipping across Pakistan on orders above Rs. 2,500"
+                    value={settings.announcement_text ?? ''}
+                    onChange={(e) => setSettings({ ...settings, announcement_text: e.target.value.replace(/[\r\n]+/g, ' ') })}
+                    placeholder="💬 WhatsApp Support: Mon–Sat, 10am–8pm   🔄 Easy 7-Day Exchange   🤍 100% Discreet Packaging   🚚 FREE Shipping above Rs. 3,000"
                     className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-burgundy font-medium bg-white"
                   />
                 </div>
@@ -1475,8 +1475,9 @@ export default function AdminPage() {
                     <label className="block text-xs font-semibold text-gray-700 mb-1">Flat Delivery Charge (PKR)</label>
                     <input
                       type="number"
+                      min="0"
                       value={settings.base_shipping_rate}
-                      onChange={(e) => setSettings({ ...settings, base_shipping_rate: parseFloat(e.target.value) || 200 })}
+                      onChange={(e) => setSettings({ ...settings, base_shipping_rate: e.target.value === '' ? 0 : Math.max(0, parseFloat(e.target.value) || 0) })}
                       className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-burgundy"
                     />
                   </div>
@@ -1484,8 +1485,9 @@ export default function AdminPage() {
                     <label className="block text-xs font-semibold text-gray-700 mb-1">Free Shipping Spend Threshold (PKR)</label>
                     <input
                       type="number"
+                      min="0"
                       value={settings.free_shipping_threshold}
-                      onChange={(e) => setSettings({ ...settings, free_shipping_threshold: parseFloat(e.target.value) || 2500 })}
+                      onChange={(e) => setSettings({ ...settings, free_shipping_threshold: e.target.value === '' ? 0 : Math.max(0, parseFloat(e.target.value) || 0) })}
                       className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-burgundy"
                     />
                   </div>

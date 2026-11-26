@@ -11,16 +11,22 @@ import {
   Search,
   Ruler,
   Phone,
-  Shield,
-  Truck,
   Sparkles,
   ChevronRight,
   ChevronDown,
-  Lock
+  Lock,
+  LayoutGrid
 } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { Product, Category, Subcategory, SiteSettings } from '@/lib/types';
-import { getProducts, getCategories, getSubcategories, getSiteSettings } from '@/lib/db';
+import {
+  DEFAULT_SITE_SETTINGS,
+  getProducts,
+  getCategories,
+  getSubcategories,
+  getSiteSettings,
+  subscribeToStoreChanges
+} from '@/lib/db';
 import BraSizeCalculatorModal from './BraSizeCalculatorModal';
 
 interface HeaderProps {
@@ -34,6 +40,7 @@ export default function Header({ onMobileMenuToggle }: HeaderProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
+  const [isAllCatsOpen, setIsAllCatsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [allProducts, setAllProducts] = useState<Product[]>([]);
@@ -44,6 +51,8 @@ export default function Header({ onMobileMenuToggle }: HeaderProps) {
   const [mobileExpandedCat, setMobileExpandedCat] = useState<string | null>(null);
 
   const searchRef = useRef<HTMLDivElement>(null);
+  const megaMenuRef = useRef<HTMLDivElement>(null);
+  const megaHoverAtRef = useRef<number>(0);
 
   useEffect(() => {
     getProducts().then(setAllProducts);
@@ -58,17 +67,47 @@ export default function Header({ onMobileMenuToggle }: HeaderProps) {
     };
     loadSettings();
 
+    const unsubSettings = subscribeToStoreChanges('site_settings', loadSettings);
+    const unsubCategories = subscribeToStoreChanges('categories', loadCategories);
+    const unsubSubcategories = subscribeToStoreChanges('subcategories', loadCategories);
+
     if (typeof window !== 'undefined') {
+      const handleStorage = (e: StorageEvent) => {
+        if (e.key === '__trigger_sp_categories_updated' || e.key === 'sp_cached_categories' || e.key === 'sp_cached_subcategories') {
+          loadCategories();
+        }
+        if (e.key === '__trigger_sp_settings_updated' || e.key === 'sp_cached_settings') {
+          loadSettings();
+        }
+      };
       window.addEventListener('sp_categories_updated', loadCategories);
       window.addEventListener('sp_settings_updated', loadSettings);
+      window.addEventListener('storage', handleStorage);
       return () => {
+        unsubSettings();
+        unsubCategories();
+        unsubSubcategories();
         window.removeEventListener('sp_categories_updated', loadCategories);
         window.removeEventListener('sp_settings_updated', loadSettings);
+        window.removeEventListener('storage', handleStorage);
       };
     }
+
+    return () => {
+      unsubSettings();
+      unsubCategories();
+      unsubSubcategories();
+    };
   }, []);
 
   const headerCategories = categories.filter((c) => c.show_in_header !== false);
+  const visibleInlineCategories = headerCategories.slice(0, 6);
+
+  // Flatten newlines so marquee always runs in a single horizontal row
+  const announcementText = settings
+    ? (settings.announcement_text || DEFAULT_SITE_SETTINGS.announcement_text || '').replace(/[\r\n]+/g, '   ').trim()
+    : '';
+  const marqueeDurationSec = Math.max(22, Math.min(48, Math.round(announcementText.length * 0.24) + 16));
 
   // Update mobile menu state to hide bottom nav
   const setMobileMenu = (open: boolean) => {
@@ -79,10 +118,12 @@ export default function Header({ onMobileMenuToggle }: HeaderProps) {
     }
   };
 
-  // Close menu on route change
+  // Close menus on route change
   useEffect(() => {
     setMobileMenu(false);
     setIsSearchOpen(false);
+    setIsAllCatsOpen(false);
+    setHoveredCatId(null);
   }, [pathname]);
 
   // Live search filtering
@@ -100,61 +141,70 @@ export default function Header({ onMobileMenuToggle }: HeaderProps) {
     setSearchResults(matches);
   }, [searchQuery, allProducts]);
 
-  // Close search dropdown on click outside
+  // Close search & mega-menu dropdowns on click outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
         setIsSearchOpen(false);
+      }
+      if (megaMenuRef.current && !megaMenuRef.current.contains(event.target as Node)) {
+        setIsAllCatsOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const navLinks = [
-    { label: 'Home', href: '/' },
-    { label: 'All Products', href: '/shop' },
-    { label: 'Comfort Bras', href: '/shop?cat=comfort-posture-bras' },
-    { label: 'Plush Sets', href: '/shop?cat=plush-cozy-sets' },
-    { label: 'Flash Deals', href: '/flash-deals' },
-    { label: 'Track Order', href: '/track-order' },
-  ];
-
   return (
     <>
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-rose-100 transition-all">
-        {/* 1. Announcement Bar */}
-        <div className="bg-gradient-to-r from-burgundy via-burgundy-800 to-rose-900 text-white text-[11px] sm:text-xs py-1.5 px-3 font-medium">
-          <div className="max-w-7xl mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-1.5 mx-auto sm:mx-0">
-              <Truck className="w-3.5 h-3.5 text-rose-300" />
-              <span>{settings?.announcement_text || 'FREE Shipping across Pakistan on orders above Rs. 2,500'}</span>
-            </div>
-            <div className="hidden sm:flex items-center gap-4 text-rose-200 text-[11px]">
-              <span className="flex items-center gap-1">
-                <Shield className="w-3 h-3 text-emerald-400" />
-                100% Discreet Packaging
-              </span>
-              <button
-                type="button"
-                onClick={() => setIsCalculatorOpen(true)}
-                className="hover:text-white flex items-center gap-1 transition-colors"
+        {/* 1. Full-Width Single-Row Moving Announcement Marquee */}
+        <div className="bg-gradient-to-r from-burgundy via-burgundy-800 to-rose-900 text-white text-[11px] sm:text-xs h-7 sm:h-8 flex items-center overflow-hidden border-b border-burgundy-950/20">
+          {announcementText ? (
+            <div className="w-full overflow-hidden whitespace-nowrap select-none">
+              <div
+                className="flex w-max items-center animate-marquee hover:[animation-play-state:paused]"
+                style={{ animationDuration: `${marqueeDurationSec}s` }}
               >
-                <Ruler className="w-3 h-3 text-rose-300" />
-                Bra Size Calculator
-              </button>
+                {/* Track Half 1 (4 repeats ensure even short promos exceed 2560px screens without gaps) */}
+                <div className="flex items-center shrink-0">
+                  {[0, 1, 2, 3].map((i) => (
+                    <span
+                      key={`marquee-a-${i}`}
+                      className="inline-flex items-center gap-5 sm:gap-8 px-4 sm:px-6 font-medium tracking-wide"
+                    >
+                      <span className="whitespace-pre">{announcementText}</span>
+                      <span className="text-rose-300/70 text-[10px]" aria-hidden="true">✦</span>
+                    </span>
+                  ))}
+                </div>
+                {/* Track Half 2 (Exact duplicate for seamless -50% loop) */}
+                <div className="flex items-center shrink-0" aria-hidden="true">
+                  {[0, 1, 2, 3].map((i) => (
+                    <span
+                      key={`marquee-b-${i}`}
+                      className="inline-flex items-center gap-5 sm:gap-8 px-4 sm:px-6 font-medium tracking-wide"
+                    >
+                      <span className="whitespace-pre">{announcementText}</span>
+                      <span className="text-rose-300/70 text-[10px]">✦</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="w-full h-full" />
+          )}
         </div>
 
-        {/* 2. Main Navigation Bar */}
+        {/* 2. Main Navigation Bar (Clean Single-Line Core Navigation) */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16 sm:h-20 gap-2 sm:gap-4">
+          <div className="flex items-center justify-between h-16 sm:h-[70px] gap-2 sm:gap-4">
             {/* Mobile Hamburger Button */}
             <button
               type="button"
               onClick={() => setMobileMenu(!isMobileMenuOpen)}
-              className="lg:hidden p-2 rounded-lg text-gray-700 hover:text-burgundy hover:bg-blush-50 transition-colors"
+              className="lg:hidden p-2 rounded-lg text-gray-700 hover:text-burgundy hover:bg-blush-50 transition-colors shrink-0"
               aria-label="Toggle Navigation Menu"
             >
               {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -162,12 +212,12 @@ export default function Header({ onMobileMenuToggle }: HeaderProps) {
 
             {/* Logo */}
             <Link href="/" className="flex items-center shrink-0">
-              <div className="relative h-12 w-36 sm:h-16 sm:w-48">
+              <div className="relative h-12 w-36 sm:h-14 sm:w-44">
                 <Image
                   src="/images/logo.png"
                   alt="Secret Petal Store Logo"
                   fill
-                  sizes="(max-width: 640px) 144px, 192px"
+                  sizes="(max-width: 640px) 144px, 176px"
                   className="object-contain object-left sm:object-center"
                   priority
                   unoptimized
@@ -175,11 +225,11 @@ export default function Header({ onMobileMenuToggle }: HeaderProps) {
               </div>
             </Link>
 
-            {/* Desktop Navigation Links */}
-            <nav className="hidden lg:flex items-center gap-5 xl:gap-7 text-xs sm:text-sm font-medium text-gray-700">
+            {/* Desktop Core Navigation Links (Always Single-Line) */}
+            <nav className="hidden lg:flex items-center gap-6 xl:gap-8 text-sm font-medium text-gray-700 whitespace-nowrap">
               <Link
                 href="/"
-                className={`transition-colors hover:text-burgundy py-1 relative ${
+                className={`transition-colors hover:text-burgundy py-1.5 relative whitespace-nowrap ${
                   pathname === '/' ? 'text-burgundy font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-burgundy' : ''
                 }`}
               >
@@ -187,63 +237,15 @@ export default function Header({ onMobileMenuToggle }: HeaderProps) {
               </Link>
               <Link
                 href="/shop"
-                className={`transition-colors hover:text-burgundy py-1 relative ${
+                className={`transition-colors hover:text-burgundy py-1.5 relative whitespace-nowrap ${
                   pathname === '/shop' ? 'text-burgundy font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-burgundy' : ''
                 }`}
               >
                 All Products
               </Link>
-
-              {/* Dynamic Header Categories with Subcategory Dropdowns */}
-              {headerCategories.map((cat) => {
-                const catSubs = subcategories.filter((s) => s.category_id === cat.id);
-                const isHovered = hoveredCatId === cat.id;
-
-                return (
-                  <div
-                    key={cat.id}
-                    className="relative"
-                    onMouseEnter={() => setHoveredCatId(cat.id)}
-                    onMouseLeave={() => setHoveredCatId(null)}
-                  >
-                    <Link
-                      href={`/shop?cat=${cat.slug}`}
-                      className="flex items-center gap-1 transition-colors hover:text-burgundy py-1"
-                    >
-                      <span>{cat.name}</span>
-                      {catSubs.length > 0 && (
-                        <ChevronDown className="w-3 h-3 text-gray-400" />
-                      )}
-                    </Link>
-
-                    {/* Subcategories Dropdown */}
-                    {catSubs.length > 0 && isHovered && (
-                      <div className="absolute top-full left-0 mt-1 w-52 bg-white rounded-xl shadow-xl border border-rose-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-                        <Link
-                          href={`/shop?cat=${cat.slug}`}
-                          className="block px-3 py-1.5 text-xs font-bold text-burgundy hover:bg-blush-50"
-                        >
-                          All {cat.name}
-                        </Link>
-                        <div className="my-1 border-t border-rose-50" />
-                        {catSubs.map((sub) => (
-                          <Link
-                            key={sub.id}
-                            href={`/shop?cat=${cat.slug}&sub=${sub.slug}`}
-                            className="block px-3 py-1.5 text-xs text-gray-700 hover:text-burgundy hover:bg-blush-50 transition-colors"
-                          >
-                            {sub.name}
-                          </Link>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
               <Link
                 href="/flash-deals"
-                className={`transition-colors hover:text-burgundy py-1 relative ${
+                className={`transition-colors hover:text-burgundy py-1.5 relative whitespace-nowrap ${
                   pathname === '/flash-deals' ? 'text-burgundy font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-burgundy' : ''
                 }`}
               >
@@ -251,16 +253,24 @@ export default function Header({ onMobileMenuToggle }: HeaderProps) {
               </Link>
               <Link
                 href="/track-order"
-                className={`transition-colors hover:text-burgundy py-1 relative ${
+                className={`transition-colors hover:text-burgundy py-1.5 relative whitespace-nowrap ${
                   pathname === '/track-order' ? 'text-burgundy font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-burgundy' : ''
                 }`}
               >
                 Track Order
               </Link>
+              <button
+                type="button"
+                onClick={() => setIsCalculatorOpen(true)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-burgundy bg-blush-50 hover:bg-rose-100/80 border border-rose-200/80 px-3 py-1.5 rounded-full transition-colors whitespace-nowrap"
+              >
+                <Ruler className="w-3.5 h-3.5 text-burgundy" />
+                <span>Bra Size Calculator</span>
+              </button>
             </nav>
 
             {/* Right Action Icons & Search */}
-            <div className="flex items-center gap-1.5 sm:gap-3">
+            <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
               {/* Search Box / Button */}
               <div className="relative" ref={searchRef}>
                 <button
@@ -352,6 +362,172 @@ export default function Header({ onMobileMenuToggle }: HeaderProps) {
             </div>
           </div>
         </div>
+
+        {/* 2.5 Desktop Categories Strip (Single-Row + Responsive Multi-Column Mega Menu) */}
+        {headerCategories.length > 0 && (
+          <div className="hidden lg:block border-t border-rose-100/80 bg-gradient-to-r from-blush-50/70 via-white to-blush-50/70">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="flex items-center justify-center gap-2 xl:gap-4 py-1.5 relative">
+                {visibleInlineCategories.map((cat, idx) => {
+                  const catSubs = subcategories.filter((s) => s.category_id === cat.id);
+                  const isHovered = hoveredCatId === cat.id;
+
+                  return (
+                    <div
+                      key={cat.id}
+                      className={`relative shrink-0 ${idx >= 5 ? 'hidden xl:block' : ''}`}
+                      onMouseEnter={() => {
+                        setHoveredCatId(cat.id);
+                        setIsAllCatsOpen(false);
+                      }}
+                      onMouseLeave={() => setHoveredCatId(null)}
+                    >
+                      <Link
+                        href={`/shop?cat=${cat.slug}`}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-700 hover:text-burgundy hover:bg-rose-50/80 transition-colors whitespace-nowrap"
+                      >
+                        <span>{cat.name}</span>
+                        {catSubs.length > 0 && (
+                          <ChevronDown className={`w-3 h-3 text-gray-400 transition-transform duration-150 ${isHovered ? 'rotate-180 text-burgundy' : ''}`} />
+                        )}
+                      </Link>
+
+                      {/* Subcategories Dropdown */}
+                      {catSubs.length > 0 && isHovered && (
+                        <div className="absolute top-full left-0 pt-1 z-50">
+                          <div className="w-56 bg-white rounded-xl shadow-xl border border-rose-100 py-2 animate-in fade-in zoom-in-95 duration-150">
+                            <Link
+                              href={`/shop?cat=${cat.slug}`}
+                              className="block px-3.5 py-1.5 text-xs font-bold text-burgundy hover:bg-blush-50"
+                            >
+                              All {cat.name}
+                            </Link>
+                            <div className="my-1 border-t border-rose-50" />
+                            {catSubs.map((sub) => (
+                              <Link
+                                key={sub.id}
+                                href={`/shop?cat=${cat.slug}&sub=${sub.slug}`}
+                                className="block px-3.5 py-1.5 text-xs text-gray-700 hover:text-burgundy hover:bg-blush-50 transition-colors"
+                              >
+                                {sub.name}
+                              </Link>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* All / More Categories Mega-Menu Trigger */}
+                {headerCategories.length > 5 && (
+                  <div
+                    ref={megaMenuRef}
+                    className={`relative shrink-0 ${headerCategories.length === 6 ? 'xl:hidden' : ''}`}
+                    onMouseEnter={() => {
+                      megaHoverAtRef.current = Date.now();
+                      setIsAllCatsOpen(true);
+                      setHoveredCatId(null);
+                    }}
+                    onMouseLeave={() => setIsAllCatsOpen(false)}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (Date.now() - megaHoverAtRef.current < 300) {
+                          setIsAllCatsOpen(true);
+                        } else {
+                          setIsAllCatsOpen((prev) => !prev);
+                        }
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all whitespace-nowrap ${
+                        isAllCatsOpen
+                          ? 'bg-burgundy !text-white border-burgundy shadow-xs'
+                          : 'bg-rose-50/90 text-burgundy border-rose-200 hover:bg-rose-100'
+                      }`}
+                    >
+                      <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
+                      <span>All Categories ({headerCategories.length})</span>
+                      <ChevronDown className={`w-3 h-3 shrink-0 transition-transform duration-150 ${isAllCatsOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {/* Responsive Multi-Column Category Mega-Menu */}
+                    {isAllCatsOpen && (
+                      <div className="fixed left-1/2 -translate-x-1/2 mt-0 pt-2 z-50 w-[min(92vw,860px)]">
+                        <div className="bg-white rounded-2xl shadow-2xl border border-rose-100 p-5 max-h-[72vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+                          <div className="flex items-center justify-between pb-3 mb-3 border-b border-rose-100">
+                            <div>
+                              <h3 className="font-serif font-bold text-sm text-gray-900">
+                                Browse All Collections
+                              </h3>
+                              <p className="text-[11px] text-gray-500">
+                                Select any category or subcategory to filter products
+                              </p>
+                            </div>
+                            <Link
+                              href="/shop"
+                              onClick={() => setIsAllCatsOpen(false)}
+                              className="text-xs font-bold text-burgundy hover:underline whitespace-nowrap"
+                            >
+                              View Entire Shop →
+                            </Link>
+                          </div>
+
+                          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                            {headerCategories.map((cat) => {
+                              const catSubs = subcategories.filter((s) => s.category_id === cat.id);
+                              return (
+                                <div
+                                  key={`mega-${cat.id}`}
+                                  className="p-2.5 rounded-xl border border-rose-100/70 hover:border-rose-200 hover:bg-blush-50/50 transition-colors"
+                                >
+                                  <Link
+                                    href={`/shop?cat=${cat.slug}`}
+                                    onClick={() => setIsAllCatsOpen(false)}
+                                    className="flex items-center gap-2.5 group"
+                                  >
+                                    <div className="relative w-9 h-9 rounded-full overflow-hidden border border-rose-200 bg-rose-50 shrink-0">
+                                      <Image
+                                        src={cat.image_url}
+                                        alt={cat.name}
+                                        fill
+                                        sizes="36px"
+                                        className="object-cover"
+                                        unoptimized
+                                      />
+                                    </div>
+                                    <span className="text-xs font-bold text-gray-800 group-hover:text-burgundy leading-snug">
+                                      {cat.name}
+                                    </span>
+                                  </Link>
+
+                                  {catSubs.length > 0 && (
+                                    <div className="mt-2 pl-11 flex flex-wrap gap-1.5">
+                                      {catSubs.map((sub) => (
+                                        <Link
+                                          key={`mega-sub-${sub.id}`}
+                                          href={`/shop?cat=${cat.slug}&sub=${sub.slug}`}
+                                          onClick={() => setIsAllCatsOpen(false)}
+                                          className="text-[11px] px-2 py-0.5 rounded-md bg-white border border-rose-100 text-gray-600 hover:text-burgundy hover:border-burgundy/40 transition-colors"
+                                        >
+                                          {sub.name}
+                                        </Link>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </header>
 
       {/* 3. Mobile Slide-out Drawer Menu */}

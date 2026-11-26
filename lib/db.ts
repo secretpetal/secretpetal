@@ -654,15 +654,15 @@ export async function saveCategory(category: Partial<Category>): Promise<Categor
   const idx = list.findIndex(c => c.id === id);
   const updated = idx >= 0 ? list.map(c => c.id === id ? item : c) : [...list, item];
 
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('sp_cached_categories', JSON.stringify(updated));
-  }
-  notifyUpdate('sp_categories_updated');
-
   try {
     const { error } = await supabase.from('categories').upsert(item);
     if (error) console.error('Supabase saveCategory error:', error);
   } catch (e) {}
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('sp_cached_categories', JSON.stringify(updated));
+  }
+  notifyUpdate('sp_categories_updated');
 
   return item;
 }
@@ -698,7 +698,12 @@ export async function getSubcategories(categoryId?: string): Promise<Subcategory
     if (categoryId) q = q.eq('category_id', categoryId);
 
     const { data, error } = await q;
-    if (!error && Array.isArray(data) && data.length > 0) return data as Subcategory[];
+    if (!error && Array.isArray(data)) {
+      if (typeof window !== 'undefined' && !categoryId) {
+        localStorage.setItem('sp_cached_subcategories', JSON.stringify(data));
+      }
+      return data as Subcategory[];
+    }
   } catch (e) {}
 
   let list = DEFAULT_SUBCATEGORIES;
@@ -707,7 +712,7 @@ export async function getSubcategories(categoryId?: string): Promise<Subcategory
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) list = parsed;
+        if (Array.isArray(parsed)) list = parsed;
       } catch (_) {}
     }
   }
@@ -734,15 +739,15 @@ export async function saveSubcategory(sub: Partial<Subcategory>): Promise<Subcat
   const idx = list.findIndex(s => s.id === id);
   const updated = idx >= 0 ? list.map(s => s.id === id ? item : s) : [...list, item];
 
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('sp_cached_subcategories', JSON.stringify(updated));
-  }
-  notifyUpdate('sp_categories_updated');
-
   try {
     const { error } = await supabase.from('subcategories').upsert(item);
     if (error) console.error('Supabase saveSubcategory error:', error);
   } catch (e) {}
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('sp_cached_subcategories', JSON.stringify(updated));
+  }
+  notifyUpdate('sp_categories_updated');
 
   return item;
 }
@@ -1209,18 +1214,20 @@ export async function getSiteSettings(): Promise<SiteSettings> {
 
 export async function saveSiteSettings(settings: Partial<SiteSettings>): Promise<{ data: SiteSettings; error: any }> {
   const current = await getSiteSettings();
+  const baseShipping = settings.base_shipping_rate !== undefined
+    ? Number(settings.base_shipping_rate)
+    : Number(current.base_shipping_rate ?? 200);
+  const freeThreshold = settings.free_shipping_threshold !== undefined
+    ? Number(settings.free_shipping_threshold)
+    : Number(current.free_shipping_threshold ?? 2500);
+
   const payload: SiteSettings = {
     ...current,
     ...settings,
     id: 'current',
-    base_shipping_rate: Number(settings.base_shipping_rate ?? current.base_shipping_rate) || 0,
-    free_shipping_threshold: Number(settings.free_shipping_threshold ?? current.free_shipping_threshold) || 2500,
+    base_shipping_rate: Number.isFinite(baseShipping) ? Math.max(0, baseShipping) : 200,
+    free_shipping_threshold: Number.isFinite(freeThreshold) ? Math.max(0, freeThreshold) : 2500,
   };
-
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('sp_cached_settings', JSON.stringify(payload));
-  }
-  notifyUpdate('sp_settings_updated');
 
   try {
     const { data, error } = await supabase.from('site_settings').upsert({
@@ -1232,9 +1239,19 @@ export async function saveSiteSettings(settings: Partial<SiteSettings>): Promise
       console.error('Supabase saveSiteSettings error:', error);
       return { data: payload, error };
     }
-    return { data: (data as SiteSettings) || payload, error: null };
+
+    const saved = (data as SiteSettings) || payload;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sp_cached_settings', JSON.stringify(saved));
+    }
+    notifyUpdate('sp_settings_updated');
+    return { data: saved, error: null };
   } catch (e: any) {
     console.error('Supabase saveSiteSettings exception:', e);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sp_cached_settings', JSON.stringify(payload));
+    }
+    notifyUpdate('sp_settings_updated');
     return { data: payload, error: e };
   }
 }

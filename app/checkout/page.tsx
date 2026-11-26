@@ -55,8 +55,8 @@ export default function CheckoutPage() {
     getSiteSettings().then(setSettings);
   }, []);
 
-  const baseDeliveryCharge = settings?.base_shipping_rate || 200;
-  const freeThreshold = settings?.free_shipping_threshold || 2500;
+  const baseDeliveryCharge = settings?.base_shipping_rate ?? 200;
+  const freeThreshold = settings?.free_shipping_threshold ?? 2500;
   const isFreeDelivery = subtotal >= freeThreshold || appliedCoupon?.free_shipping === true;
   const deliveryCharges = isFreeDelivery ? 0 : baseDeliveryCharge;
   const grandTotal = Math.max(0, subtotal - discountAmount + deliveryCharges);
